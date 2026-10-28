@@ -1,0 +1,7 @@
+#pragma once
+
+// Create a LOCAL include/probe_private.h from this example.
+// This project repository is public: NEVER commit the actual Edge address,
+// credentials, or Core infrastructure details.
+#define PROBE_EDGE_HOST "CHANGE_ME_EDGE_HOST"
+#define PROBE_EDGE_PORT 2252
