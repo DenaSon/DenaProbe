@@ -1,0 +1,31 @@
+name: ESP32 firmware checks
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches:
+      - master
+      - "feature/**"
+
+permissions:
+  contents: read
+
+jobs:
+  platformio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install --disable-pip-version-check platformio
+      - name: Compile without telemetry config
+        run: pio run
+      - name: Compile optional HTTPS reporting path with inert placeholders
+        run: |
+          cp include/probe_report_private.h.example include/probe_report_private.h
+          pio run -t clean
+          pio run
