@@ -100,3 +100,7 @@ pio device monitor -b 115200
 Leave `include/probe_private.h` in place. Firmware defaults to GPIO2 when optional LED definitions are absent. Expected new lines: `[led] mode=...`, `[diagnostic] ... | no_filtering_verdict`, and on failed Edge probes `[control] PASS|FAIL | type=PUBLIC_TCP_443 ...`.
 
 **Verification:** v0.0.4 was committed but **has not yet been built, flashed or visually verified on the user's board**. Do not describe LED patterns or independent-control classification as tested until the owner reports hardware evidence. Never turn a single probe failure into a filtering conclusion.
+
+
+
+**Hardware scope decision (2026-10-28):** Keep only the onboard blue GPIO2 LED for all DenaProbe status indications. Do **not** add an RGB LED or other LED hardware. The owner has visually verified steady ON on a healthy probe and blinking after inducing a connection disturbance. No fault-time serial trace was captured, so the exact blinking state (Wi-Fi waiting vs suspect vs confirmed-by-control repeated Edge issue) has **not** been distinguished on hardware. Record a new observation rather than declaring filtering from blink alone.
