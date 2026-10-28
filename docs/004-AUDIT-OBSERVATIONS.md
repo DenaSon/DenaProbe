@@ -156,3 +156,17 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **HTTP:** `301 Moved Permanently` to `https://www.google.com/`; 220 bytes received. `time_total=0.877814 s`.
 - **Contrast with A-MCI-TLS-10:** Google direct HTTPS succeeded while a separate HTTPS attempt through SSH dynamic SOCKS using `socks5h` failed during TLS negotiation. A working SSH/SOCKS connection to independent `example.com` was also observed. These experiments do **not** prove filtering: endpoint-specific resolution, remote SSH server egress, IPv4/IPv6 selection, and transient conditions differ. Only one directly comparable attempt per path was measured.
 - **Next diagnostic:** Keep the same SSH tunnel active and compare `socks5://127.0.0.1:1080` (local DNS resolution with IPv4) to prior `socks5h://` (server-side DNS resolution). Record remote endpoint selection behavior and exact failure stage.
+
+
+## Observation A-MCI-TLS-12: Local DNS/IPv4 SOCKS control also fails at TLS (2026-10-28)
+
+- **Context:** Experimenter reports multiple users simultaneously unable to use SSH-based VPN connections, including Telegram updates through their VPNs. These are **unverified user reports**, not independently measured NPV reference-client failures. Windows VPN reported disabled and MCI direct egress previously checked.
+- **Command class:** Windows `curl.exe -v -4 --noproxy "" --proxy socks5://127.0.0.1:1080 --connect-timeout 15 --max-time 40 -o NUL` with HTTPS to `google.com`.
+- **Local DNS:** `google.com` resolved to IPv4 `216.239.38.120`. SOCKS5 sent an IP-address connection request to `216.239.38.120:443` (unlike earlier `socks5h` remote hostname lookup).
+- **SOCKS:** Local port accepted connection and returned `SOCKS5 request granted`.
+- **TLS:** curl offered `http/1.1` ALPN, but Schannel reported `failed to receive handshake, SSL/TLS connection failed`. Error 35, HTTP 000, 10.314569 s.
+- **Paired contextual control:** Previous direct IPv4 curl to **the same Google IP** succeeded through TLS and got HTTP 301 in 0.877814 s. This reduces the plausibility of local DNS/IP selection as the sole explanation for these two client tests, but direct-MCI-to-Google and MCI-to-SSH-exit-to-Google use materially **different routes**, so no causal inference about the MCI SSH leg alone is warranted.
+- **Interpretation:** In one sample, SOCKS TCP connect is granted while TLS application-layer exchange does not complete. The earlier success via SOCKS to an independent HTTPS site remains an important counterexample to blanket failure.
+- **Possible causes, still unverified:** transient SSH payload stall, tunnel or exit-host network failure, destination-specific remote egress, packet loss, rate limiting, or selective filtering.
+- **External context consulted 2026-10-28:** https://nabzz.online/iran-live showed provincial disruption signals in 19/31 provinces but no nationwide IODA-level outage, and https://filter.watch/english/2026/10/14/network-monitoring-september-2026-regime-fear-of-filtering-failure/ discussed fine-grained throttling that can elude high-level network health measurements. Neither establishes a causal explanation for this specific trace.
+- **Next discriminating test:** Re-run HTTPS to previously working `example.com` through the *same persistent SSH SOCKS session*, while also tracking TCP listener status and SSH client debug output. Compare with Google failure under matched time conditions. Then test same reference SSH service via a different access network, and collect actual NPV Tunnel outcomes.
