@@ -58,3 +58,16 @@ The initial log shared privately contained locally identifying details and conne
 - **What it does not show:** A meaningful performance difference (one observation each); identical response body (only byte counts match); MCI-only path attribution; no Windows OS-level VPN; that NPV Tunnel/UDPGW works. `--noproxy "*"` skips curl proxy configuration but is not a bypass for VPN network interfaces or network-wide tunnels.
 - **Next check:** With OS-level tunnel disabled and Windows attached to the Android MCI hotspot, compare public egress IP for direct versus SOCKS requests. Avoid committing full logs, client identifiers or public IPs without review.
 
+
+
+## Observation A-ROUTE-04: Egress network attribution failed (2026-10-28)
+
+Two HTTPS IP-echo requests from the Windows host:
+- `curl --noproxy "*"`: A public IPv4 in **144.172.68.0/24**.
+- `curl --proxy socks5h://127.0.0.1:1080`: A different public IPv4 matching the remote SSH host's observed network address.
+
+Independent public BGP and IP registration lookups describe the **144.172.68.0/24** origin as **AS30823 aurologic GmbH**, registered to **RouterHosting LLC / Cloudzy**, a cloud/hosting network rather than the MCI mobile carrier. These results are *inconsistent* with direct unmodified MCI carrier egress. (Example public references: `https://ipgeolocation.io/browse/ip/144.172.68.69`, `https://www.bigdatacloud.com/network-lookup/144.172.68.0/24`.)
+
+**Interpretation:** Distinct proxy and non-curl-proxy egress IPs are confirmed, but **the intended no-VPN MCI baseline is not verified** and is likely confounded by an OS/network tunnel or alternate active uplink. Note that `--noproxy "*"` only bypasses curl's proxy settings; it cannot disable a system-wide VPN/TUN route.
+
+**Next step:** Disable OS-level tunnel and proxies temporarily for the controlled run; ensure the Windows active Wi-Fi is the Android MCI hotspot; recheck **no-proxy** public IP/ASN and route selection. Avoid private or server IPs in published audit records.
