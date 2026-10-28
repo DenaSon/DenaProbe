@@ -111,3 +111,16 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Important contrast:** Earlier curl via SSH SOCKS succeeded from the Windows host **while a separate system-wide tunnel was still enabled**. Different underlay routes prevent attributing this difference to filtering without further controls.
 - **Interpretation:** Successful SSH identification, KEX, password authentication and local SOCKS binding **do not prove** application data transport. This run exhibits a **forwarded HTTPS timeout**, not a proven MCI filtering event and not yet a confirmed NPV Tunnel failure.
 - **Next diagnostic:** Keep SSH running and curl a *different independently reachable HTTPS destination* via the same SOCKS5 proxy with verbose output to identify whether SOCKS negotiation, SSH channel opening, TLS, or HTTP is the last observed stage. Follow with direct-path control from the same Windows interface and multiple repeat attempts.
+
+
+## Observation A-MCI-SOCKS-08: HTTPS succeeds through SSH dynamic SOCKS forwarding (2026-10-28)
+
+- **Context:** Same intended MCI mobile-data no-system-tunnel audit sequence as A-MCI-SSH-06/A-MCI-SOCKS-07. No new per-request upstream route check provided. The actual NPV Tunnel app was not part of this measurement.
+- **Client:** Windows curl 8.13.0 with `-v --noproxy "" --proxy socks5h://127.0.0.1:1080 --connect-timeout 10 --max-time 25 -o NUL https://example.com/`. SSH `-N -T -D` listener remained active.
+- **SOCKS:** Local SOCKS connection started, request to `example.com:443` with proxy-side hostname resolution; curl explicitly reported `SOCKS5 request granted`.
+- **TLS:** TLS negotiation progressed; ALPN selected `http/1.1`.
+- **HTTP:** Received `HTTP/1.1 200 OK` and **577 bytes** of response body.
+- **Duration:** About **7 seconds** as indicated by curl's progress display, not an exact measured `time_total`. This is not an RTT or throughput estimate.
+- **Interpretation:** A real application-data transfer via the SSH SOCKS path completed successfully in this sample. The earlier `google.com` SOCKS HTTPS attempt that timed out is **not** evidence of blanket SSH forwarding failure; it remains unexplained and may reflect a destination-specific or transient factor or a too-short timeout.
+- **Still not tested:** Successful NPV Tunnel application data, UDPGW, persistent connection stability, multiple matched rounds, target failure-state comparisons.
+- **Next test:** Retry `google.com` with verbose curl and a longer connection timeout, preserving the same tunnel and network conditions. Compare where it stops (SOCKS, TLS, HTTP) before attributing a cause.
