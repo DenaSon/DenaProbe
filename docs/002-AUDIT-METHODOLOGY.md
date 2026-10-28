@@ -56,3 +56,17 @@ Before implementing a classifier, document at least one repeatedly observed diff
 ## Current action
 
 **Phase 0 complete:** build, USB flash, serial output verified on ESP32-D0WD. A Wi-Fi association/DHCP test succeeded through an Android 2.4 GHz hotspot (carrier route at time of that test not independently confirmed). **Now: Phase 1A healthy MCI baseline**, following [the runbook](003-HEALTHY-BASELINE-RUNBOOK.md). No external DNS/TCP/SSH probes are implemented yet; the actual NPV Tunnel SSH-Direct reference outcome must be measured before declaring a healthy baseline.
+
+
+## User-confirmed reference topology: Core / Edge
+
+The service under investigation uses a **Core / Edge** architecture, as explicitly described by its operator (2026-10-28):
+
+`NPV Tunnel client → public DNS hostname → replaceable Edge (gateway / relay) → Core (account/authentication and actual public internet egress) → destination`.
+
+- **Edge:** The hostname configured in the reference NPV Tunnel client resolves to an Edge public address. These relay/gateway endpoints are replaced in response to connection interference. Changing the hostname's A-record target does not necessarily change the SSH back-end identity.
+- **Core:** The user states account management/authentication and the actual public egress IP belong to Core; Core is operationally kept out of public client configuration. Treat claims that Core is 'hidden' or unaffected by filtering as *operator-reported design and experience*, not independently verified permanent protection.
+- **SSH trace interpretation:** SSH handshake/host-key presented through different Edges may still represent the *same Core SSH backend*. SSH authentication failures must not automatically be attributed to the Edge; upstream forwarding issues and Core account policy remain alternative hypotheses.
+- **Failure domains to distinguish:** (1) mobile client / operator to Edge, (2) Edge relay to Core, (3) Core SSH/authentication and per-channel forwarding, (4) Core outbound connectivity to internet destinations, and (5) end-user application's real data flow.
+- **Comparability:** Record the *Edge identity/route epoch* separately from the Core identity and subscriber/operator. Treat a relay switch as a topology-changing intervention. Do not compare pre-/post-Edge changes as a controlled measurement of carrier filtering unless other confounders are accounted for.
+- **Security:** Public notes should use generic labels (Edge-A, Edge-B, Core) and sanitized observations; never publish Core address, private routing/configuration, user credentials, or unredacted SSH client logs.
