@@ -17,3 +17,6 @@ data/raw/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local-only Core/Edge probing target (private infrastructure).
+include/probe_private.h
