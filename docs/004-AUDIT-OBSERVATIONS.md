@@ -133,3 +133,15 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Observed error:** `curl: (7) Failed to connect to 127.0.0.1 port 1080 after 2045 ms: Could not connect to server`. Verbose output reported TCP **Connection refused** at the local proxy endpoint.
 - **Interpretation:** The failure occurred **before SOCKS5 negotiation and before any destination/SSH forwarding request**. It cannot be attributed to Google reachability, MCI network filtering, or remote SSH server behavior from this log alone. Likely no process was listening on port 1080 at that moment; SSH tunnel may have terminated, but that cause is not yet independently confirmed.
 - **Next diagnostic:** Use Windows `Get-NetTCPConnection -LocalPort 1080 -State Listen -ErrorAction SilentlyContinue` to inspect local listener; inspect the SSH window and re-establish the SOCKS tunnel as needed. Re-run endpoint tests only once the local listener is verified.
+
+
+## Observation A-MCI-TLS-10: Google HTTPS TLS handshake fails after SOCKS grant (2026-10-28)
+
+- **Context:** Windows SSH dynamic forwarding listener was confirmed reachable again. This observation followed A-MCI-SOCKS-08 (successful `example.com` HTTPS 200 through SSH). The experimenter reported Windows system VPN disabled and MCI mobile uplink, previously checked by public IP; not independently revalidated during this individual request.
+- **Test:** curl verbose to `https://google.com/` with `socks5h://127.0.0.1:1080`, `--connect-timeout 15`, `--max-time 40`; local HTTP proxy disabled.
+- **SOCKS result:** `SOCKS5 request granted`, so unlike A-MCI-SOCKS-09, the local SOCKS listener was active and the SOCKS CONNECT request succeeded.
+- **TLS result:** curl reported `ALPN: curl offers http/1.1` followed by `schannel: failed to receive handshake, SSL/TLS connection failed`. No successful TLS handshake or HTTP response was observed.
+- **Final curl error:** Exit error **35**, `HTTP=000`, `time_total=10.533483 s`.
+- **Interpretation:** HTTPS TLS handshake failed **after** SOCKS CONNECT was granted. This is materially distinct from a failure to connect to local port 1080, from failed SSH user authentication, or from proof of blanket SSH transport blocking. The timeout or peer-close mechanism cannot be distinguished from this short log alone.
+- **Alternative explanations to test:** Google-specific TLS endpoint behavior, destination/path route or DNS differences (remote SOCKS resolution may prefer IPv6), intermittent packet loss, SSH forwarding instability, or filtering. No particular cause is established.
+- **Next discriminating control:** On the same Windows/MCI network, execute verbose `curl -4 --noproxy "*" https://google.com/` without SSH/proxy, capturing the stage and outcome; compare with SOCKS and independent example.com successful reference. Preserve exact conditions, timestamps, and repeated attempts.
