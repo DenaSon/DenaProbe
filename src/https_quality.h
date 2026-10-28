@@ -163,7 +163,8 @@ Result run() {
     WiFiClientSecure tls;
     tls.setCACert(kGtsRootR4);
     tls.setHandshakeTimeout(7);
-    tls.setTimeout(4000);
+    // HTTPClient::setTimeout below is in milliseconds and sets the
+    // underlying WiFiClientSecure read timeout in seconds as required.
 
     HTTPClient http;
     http.setConnectTimeout(7000);
