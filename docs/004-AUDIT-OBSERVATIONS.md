@@ -398,3 +398,12 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Firmware compatibility:** The v0.0.4 default `PROBE_LED_PIN=2` and `PROBE_LED_ACTIVE_LOW=0` are verified **for this exact physical specimen**. No change to the firmware or pin configuration is needed to drive its blue status LED.
 - **Options:** Retain the validated single blue LED with different blinking patterns for present research; optional future RGB status can be provided via an appropriately wired external RGB/individually-addressable LED (with correct voltage-level and current requirements). Do not attempt to software-drive the board's red supply indicator as a general-purpose status LED.
 - **Safety:** Avoid assuming unknown components are LED outputs, connecting outputs to boot strapping/flash/USB pins, or directly applying 5 V logic to ESP32 GPIO. No hardware wiring/modification was performed or requested by this note.
+
+
+## Observation B-ESP32-LED-FAULT-35: User-reported induced-fault blinking verified (2026-10-28)
+
+- **Board:** ESP32 DEVKITV1 with a user-verified onboard blue GPIO2 LED; no additional RGB LED or external status hardware desired.
+- **User-reported induced fault:** Owner intentionally caused a connectivity disturbance while running v0.0.4 and observed that the blue status LED **started blinking**. This positively verifies a **visible fault response** from the physical device in addition to earlier verified steady-ON healthy behavior.
+- **Evidence/limit:** No serial transcript was provided during the induced event, so which actual indicator state was entered (`WIFI_WAIT`, `SUSPECT`, or `EDGE_ISSUE`), duration, independent control outcome, and recovery transition **cannot be independently confirmed** from this report. It would be incorrect to claim verified "three consecutive Edge failures with healthy public control" or validated filtering classification.
+- **Design decision:** Final indication hardware for the current project is the **existing single blue GPIO2 LED**, using different steady/flashing patterns; do not add LEDs, RGB modules, or extra wiring unless the operator later changes the scope.
+- **Status:** v0.0.4 first healthy probe cycle + steady blue LED previously verified; fault causes blinking per operator report. Classification logic and controlled fault-domain attribution still require serial-level evidence if accuracy is to be evaluated.
