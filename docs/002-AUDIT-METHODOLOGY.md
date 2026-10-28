@@ -55,4 +55,4 @@ Before implementing a classifier, document at least one repeatedly observed diff
 
 ## Current action
 
-**Phase 0 first:** build, USB flash, and verify serial output. No network probes are running yet.
+**Phase 0 complete:** build, USB flash, serial output verified on ESP32-D0WD. A Wi-Fi association/DHCP test succeeded through an Android 2.4 GHz hotspot (carrier route at time of that test not independently confirmed). **Now: Phase 1A healthy MCI baseline**, following [the runbook](003-HEALTHY-BASELINE-RUNBOOK.md). No external DNS/TCP/SSH probes are implemented yet; the actual NPV Tunnel SSH-Direct reference outcome must be measured before declaring a healthy baseline.
