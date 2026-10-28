@@ -229,3 +229,12 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Interpretation:** The same service can complete SSH login and useful proxied HTTP data, yet shows intermittent whole-session resets/timeouts and forwarded HTTPS stalls. This is important evidence for separating **SSH control-plane success, SSH transport stability, per-channel open results, and application-data success** in DenaProbe. No filtering or DPI mechanism is proved.
 - **Privacy:** The raw SSH transcript includes personal identifiers and sensitive machine paths/agent identity; **do not commit raw logs** or client account details. This note intentionally retains only sanitized observations.
 - **Next action:** Restart the diagnostic SSH process using `-vvv` plus conservative `ServerAliveInterval` / `ServerAliveCountMax` values, then reproduce one pinned-IP HTTPS SOCKS attempt and capture timestamped failure-stage snippets in a future observation. Keep this control separate from direct egress and server-side testing.
+
+
+## Observation A-MCI-RELAY-19: User reports recovery after relay switch; new healthy baseline required (2026-10-28)
+
+- **User-reported event:** The experimenter changed the relay due to high latency. Afterwards, they reported that affected users' connection problems were resolved, and requested testing in a healthy, functioning state.
+- **Critical environmental change:** Relay selection/topology changed. The exact old/new relay endpoints, routing changes, NPV client settings and any difference from the separately tested Windows OpenSSH reference server were **not provided**. Do not assume the relay changed the OpenSSH test server or the Windows underlay.
+- **Evidence classification:** Qualitative user-reported operational recovery. This is **not** yet a controlled causal test showing that the prior relay was responsible or that MCI filtering ceased. Previous failed samples remain applicable only to their original measurement conditions.
+- **Measurement design:** Start a separate post-switch *healthy baseline* series with renewed verification that the Windows no-proxy public egress uses the intended MCI mobile uplink, followed by independent control HTTPS, fresh SSH DNS/TCP/KEX/auth, SOCKS5 port-forwarding HTTPS, and true NPV Tunnel reference-client application traffic. Repeat healthy rounds rather than treating one success as proof of stability.
+- **Sanitization:** No private relay URLs, credentials, user identity, host log, or full public client egress IP included.
