@@ -75,6 +75,12 @@ This update adds a **separate, sequential** public HTTPS sample after the SSH se
 - Onboard LED now means **both SSH and recent public HTTPS passed** when solid. SSH failure / HTTP failure => warning pattern; SSH success with unmeasured HTTPS => partial pattern. This is only an experimental indication for the tested paths, not an NPV or Telegram health signal. Wi-Fi disconnected => slow blink.
 - Security and reliability caveat: NTP may be blocked even if HTTPS works in other clients; this yields `CLOCK_NOT_READY`. Public Cloudflare speedtest routing may differ from Telegram or SSH relay. The fixed CA root may need maintenance. Only local physical testing can confirm TLS RAM budget on this ESP32.
 
+### 2026-10-29 build-size fix — experimental partition only
+
+The first HTTPS-enabled PlatformIO build **failed at the program-size check**, not at RAM allocation: binary `1,380,232` bytes; default app partition `1,310,720` bytes (105.3%). **That build was not flashed.** The branch now configures `board_build.partitions = min_spiffs.csv` **only** for `esp32dev_ssh_feasibility`. On a standard `esp32dev` with **4 MiB flash**, the official `min_spiffs.csv` retains two OTA app slots (`app0` / `app1`) of `0x1E0000 = 1,966,080` bytes each, and reduces the SPIFFS area to 128 KiB. The default `esp32dev` build and `src/main.cpp` remain unchanged. Source: [Espressif Arduino-ESP32 2.0.17 min_spiffs.csv](https://github.com/espressif/arduino-esp32/blob/2.0.17/tools/partitions/min_spiffs.csv).
+
+**Caution:** partition layout changes may make preexisting flash filesystem data inaccessible or require reformatting. Do not flash onto a board with valuable SPIFFS data without backing it up. This board's experimental firmware is not designed to use SPIFFS. Do not assume compatibility with a board that has less than 4 MiB flash. **The updated partition build has not yet been validated in PlatformIO or on ESP32 hardware.**
+
 ### Hardware acceptance test (not yet executed)
 
 1. `git pull --ff-only`; `pio run -e esp32dev_ssh_feasibility`; only after a successful build: `pio run -e esp32dev_ssh_feasibility -t upload`; `pio device monitor -b 115200 --filter time`.
