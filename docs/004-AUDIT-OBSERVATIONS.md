@@ -188,3 +188,14 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Result:** HTTP **200** from `172.66.147.243`; TCP connect elapsed **0.138101 s**; cumulative TLS completion time **0.427458 s**; total request **0.603121 s**.
 - **Contrast:** An earlier SSH SOCKS5 request for the same target IP timed out after 15 s *before* `SOCKS5 request granted`. These requests were not simultaneous. A successful direct connection does **not** locate the cause of the forwarded failure: the path from the remote SSH server to destination differs from the client direct route.
 - **Next test:** Pin the same target IP using `--resolve` while proxying via `socks5://127.0.0.1:1080`, with the persistent SSH tunnel active, and capture the stage and timing. Repeat matched pairs and collect SSH client channel diagnostics as needed.
+
+
+## Observation A-MCI-TLS-15: Pinned-IP example.com SOCKS grant followed by TLS timeout (2026-10-28)
+
+- **Context:** Same intended Windows-over-MCI, system-VPN-off SSH SOCKS audit; immediately prior direct pinned-IP control A-MCI-HTTP-14 succeeded. Route/egress at request time not independently captured.
+- **Test:** curl verbose via `socks5://127.0.0.1:1080`, with `--resolve "example.com:443:172.66.147.243"`, `--connect-timeout 15`, `--max-time 30`, HTTPS to `example.com`.
+- **SOCKS:** Local DNS-cache pin was honored. `SOCKS5 connect to 172.66.147.243:443` and `SOCKS5 request granted` were observed at about the 2-second mark.
+- **TLS:** Schannel offered HTTP/1.1 via ALPN, but the TLS handshake did not finish before curl's 15-second connection timeout. Error `curl: (28) Connection timed out after 15008 milliseconds`, HTTP `000`, total time **15.014325 s**. `time_connect=0` and `time_appconnect=0` are incomplete timing metrics for this failed proxy transfer and do not demonstrate that SOCKS connect was rejected.
+- **Paired direct control:** Same target address and hostname received HTTP 200 with direct curl in **0.603121 s** (earlier sample; not concurrent).
+- **Interpretation:** The previous SOCKS grant indicates the proxy-level connect stage was acknowledged, but end-to-end TLS did not finish on this attempt. The apparent 15-second cutoff is **client-configured connect-timeout**, not evidence of a 15-second network block. The distinct remote SSH egress path, transport stalls, route changes, target and server policy remain alternatives.
+- **Next discriminating test:** Using the **same pinned IP**, compare unencrypted HTTP on port 80 *through the same SOCKS tunnel* to see whether any proxied application response can arrive without TLS. This is an additional port/protocol control, not an identical reproduction of HTTPS 443; a success or failure cannot prove a filtering mechanism. Continue to collect repetitions and remote server/network controls before designing ESP32 classifier.
