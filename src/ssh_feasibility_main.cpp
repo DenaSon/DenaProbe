@@ -9,6 +9,9 @@
 #include <freertos/task.h>
 #include <libssh_esp32.h>
 #include <libssh/libssh.h>
+#include <libssh/callbacks.h>
+#include <libssh/packet.h> // Pinned-port internal API: observe packets, never consume them.
+#include <libssh/ssh2.h>
 #include "wifi_config.h"
 
 #if __has_include("probe_private.h")
@@ -39,8 +42,54 @@ enum class Code : uint8_t {
     SERVICE_ACCEPT_TIMEOUT, SERVICE_REQUEST_ERROR
 };
 
+// All times are relative to ssh_connect start. -1 means NOT_OBSERVED.
+// Receive callbacks observe a packet before libssh validates/processes it.
+// Only ssh_connect()==SSH_OK proves the completed KEX/NEWKEYS transport.
+struct StageTrace {
+    uint32_t startedAt = 0;
+    int32_t bannerMs = -1;
+    int32_t kexInitTxMs = -1;
+    int32_t kexInitRxMs = -1;
+    int32_t algorithmsMs = -1;
+    int32_t newkeysRxMs = -1;
+    bool transportVerified = false;
+};
+
+void recordStage(int32_t &destination, const StageTrace &trace) {
+    if (destination < 0) {
+        destination = static_cast<int32_t>(millis() - trace.startedAt);
+    }
+}
+
+// libssh-0.11.5 progress: .4 banner, .5 local KEXINIT,
+// .6 server KEXINIT, .8 algorithms selected, 1.0 complete transport.
+// These callbacks mark *observations* only, not successful verification.
+void onConnectProgress(void *userdata, float progress) {
+    StageTrace &trace = *static_cast<StageTrace *>(userdata);
+    if (progress > 0.39f && progress < 0.41f) {
+        recordStage(trace.bannerMs, trace);
+    } else if (progress > 0.49f && progress < 0.51f) {
+        recordStage(trace.kexInitTxMs, trace);
+    } else if (progress > 0.59f && progress < 0.61f) {
+        recordStage(trace.kexInitRxMs, trace);
+    } else if (progress > 0.79f && progress < 0.81f) {
+        recordStage(trace.algorithmsMs, trace);
+    }
+}
+
+// Observer for incoming SSH_MSG_NEWKEYS, before libssh's own handler.
+// MUST return NOT_USED so libssh still enforces packet/state validation.
+int observeNewkeys(ssh_session, uint8_t type, ssh_buffer, void *userdata) {
+    if (type == SSH2_MSG_NEWKEYS) {
+        StageTrace &trace = *static_cast<StageTrace *>(userdata);
+        recordStage(trace.newkeysRxMs, trace);
+    }
+    return SSH_PACKET_NOT_USED;
+}
+
 struct Result {
     Code code;
+    StageTrace stages;
     uint32_t dnsMs;
     uint32_t transportMs;
     uint32_t serviceMs;
@@ -51,7 +100,32 @@ struct Result {
 };
 
 struct SessionOwner {
+    // Keep all callback storage live through ssh_free() (called in destructor).
+    StageTrace stages{};
+    ssh_callbacks_struct connectCallbacks{};
+    ssh_packet_callback packetHandlers[2]{};
+    ssh_packet_callbacks_struct packetCallbacks{};
     ssh_session session = nullptr;
+
+    bool installObservers() {
+        stages.startedAt = millis();
+        ssh_callbacks_init(&connectCallbacks);
+        connectCallbacks.userdata = &stages;
+        connectCallbacks.connect_status_function = onConnectProgress;
+        if (ssh_set_callbacks(session, &connectCallbacks) != SSH_OK) return false;
+
+        // The observer is installed before ssh_connect registers default
+        // handlers. It never consumes/modifies packets or crypto state.
+        packetHandlers[0] = nullptr; // Type 20 (KEXINIT) uses progress callback.
+        packetHandlers[1] = observeNewkeys; // Type 21 (NEWKEYS).
+        packetCallbacks.start = SSH2_MSG_KEXINIT;
+        packetCallbacks.n_callbacks = 2;
+        packetCallbacks.callbacks = packetHandlers;
+        packetCallbacks.user = &stages;
+        ssh_packet_set_callbacks(session, &packetCallbacks);
+        return true;
+    }
+
     ~SessionOwner() { if (session) ssh_free(session); }
 };
 
@@ -159,7 +233,11 @@ Result runSshTransport() {
     }
 
     ssh_set_blocking(owner.session, 0);
-    const uint32_t transportStart = millis();
+    if (!owner.installObservers()) {
+        result.code = Code::SSH_OPTIONS_FAILED;
+        return result;
+    }
+    const uint32_t transportStart = owner.stages.startedAt;
     int rc = SSH_AGAIN;
     while (WiFi.status() == WL_CONNECTED &&
            millis() - transportStart < kConnectDeadlineMs) {
@@ -168,6 +246,8 @@ Result runSshTransport() {
         vTaskDelay(pdMS_TO_TICKS(15));
     }
     result.transportMs = millis() - transportStart;
+    owner.stages.transportVerified = (rc == SSH_OK);
+    result.stages = owner.stages;
     if (WiFi.status() != WL_CONNECTED) {
         result.code = Code::WIFI_LOST;
         return result;
@@ -178,8 +258,9 @@ Result runSshTransport() {
         return result;
     }
 
-    // ssh_connect() returned OK: libssh has completed KEX and switched
-    // transport keys. Individual KEXINIT/NEWKEYS timings are NOT measured.
+    // ssh_connect() success verifies KEX/NEWKEYS jointly. Individual
+    // packet observations and negotiations have separate elapsed times.
+    // Precise cryptographic KEX vs NEWKEYS processing durations remain UNKNOWN.
     Serial.printf("[ssh-deep] TRANSPORT_PASS | kex_newkeys_combined_ms=%lu\n",
                   static_cast<unsigned long>(result.transportMs));
 
@@ -247,7 +328,66 @@ void sshWorker(void *) {
     vTaskDelete(nullptr);
 }
 
+const char *stopStage(const Result &result) {
+    switch (result.code) {
+        case Code::WIFI_LOST: return "WIFI";
+        case Code::DNS_FAIL: return "DNS";
+        case Code::SESSION_ALLOC_FAILED: return "ALLOC";
+        case Code::SSH_OPTIONS_FAILED: return "SSH_INIT";
+        case Code::HOST_KEY_ERROR:
+        case Code::HOST_KEY_MISMATCH: return "HOST_KEY";
+        case Code::SERVICE_ACCEPT_TIMEOUT: return "WAIT_SERVICE_ACCEPT";
+        case Code::SERVICE_REQUEST_ERROR: return "SERVICE_REQUEST_OR_ACCEPT";
+        case Code::PASS: return "SERVICE_ACCEPT_RECEIVED";
+        default: break;
+    }
+    // Do not attribute a transport failure to a specific SSH message
+    // until the relevant stage has positive evidence.
+    if (result.stages.newkeysRxMs >= 0) return "NEWKEYS_PROCESSING_UNKNOWN";
+    if (result.stages.algorithmsMs >= 0) return "KEX_OR_NEWKEYS_UNKNOWN";
+    if (result.stages.kexInitRxMs >= 0) return "KEX_NEGOTIATION";
+    if (result.stages.kexInitTxMs >= 0) return "WAIT_SERVER_KEXINIT";
+    if (result.stages.bannerMs >= 0) return "KEXINIT_SEND_UNKNOWN";
+    return "TCP_OR_SSH_BANNER_UNKNOWN";
+}
+
+const char *serviceOutcome(Code code) {
+    switch (code) {
+        case Code::PASS: return "PASS";
+        case Code::SERVICE_ACCEPT_TIMEOUT: return "TIMEOUT";
+        case Code::SERVICE_REQUEST_ERROR: return "FAIL_OR_UNKNOWN";
+        default: return "NOT_TESTED";
+    }
+}
+
 void printResult(const Result &result) {
+    const StageTrace &stage = result.stages;
+    Serial.printf("[ssh-stage] BANNER_RX | state=%s | elapsed_ms=%ld\n",
+                  stage.bannerMs >= 0 ? "OBSERVED" : "NOT_OBSERVED",
+                  static_cast<long>(stage.bannerMs));
+    Serial.printf("[ssh-stage] KEXINIT_TX | state=%s | elapsed_ms=%ld\n",
+                  stage.kexInitTxMs >= 0 ? "OBSERVED" : "NOT_OBSERVED",
+                  static_cast<long>(stage.kexInitTxMs));
+    Serial.printf("[ssh-stage] KEXINIT_RX | state=%s | elapsed_ms=%ld\n",
+                  stage.kexInitRxMs >= 0 ? "OBSERVED" : "NOT_OBSERVED",
+                  static_cast<long>(stage.kexInitRxMs));
+    Serial.printf("[ssh-stage] KEX_ALGORITHMS | state=%s | elapsed_ms=%ld\n",
+                  stage.algorithmsMs >= 0 ? "NEGOTIATED" : "NOT_OBSERVED",
+                  static_cast<long>(stage.algorithmsMs));
+    Serial.printf("[ssh-stage] NEWKEYS_RX | state=%s | elapsed_ms=%ld\n",
+                  stage.newkeysRxMs >= 0 ? "OBSERVED_UNVALIDATED" : "NOT_OBSERVED",
+                  static_cast<long>(stage.newkeysRxMs));
+    Serial.printf("[ssh-stage] KEX | outcome=%s | crypto_duration_ms=NOT_MEASURED\n",
+                  stage.transportVerified ? "PASS" :
+                  stage.algorithmsMs >= 0 ? "UNKNOWN" : "NOT_TESTED");
+    Serial.printf("[ssh-stage] NEWKEYS | outcome=%s | processing_duration_ms=NOT_MEASURED\n",
+                  stage.transportVerified ? "PASS" :
+                  stage.newkeysRxMs >= 0 ? "UNKNOWN" : "NOT_TESTED");
+    Serial.printf("[ssh-stage] SERVICE_ACCEPT | outcome=%s | elapsed_ms=%lu\n",
+                  serviceOutcome(result.code),
+                  static_cast<unsigned long>(result.serviceMs));
+    Serial.printf("[ssh-deep] stop_stage=%s | no_filtering_verdict\n",
+                  stopStage(result));
     Serial.printf(
         "[ssh-deep] END | result=%s | dns_ms=%lu | transport_ms=%lu | "
         "service_ms=%lu | free_heap=%lu | min_heap=%lu | "
