@@ -4,6 +4,31 @@
 
 This is **not** the Phase 1B finished diagnostic engine. **No passwords, usernames, SSH user authentication, VPN traffic, bot integration or production changes.**
 
+## Phase 1B.2 — SSH stage visibility (source ready; local build pending)
+
+With the same pinned libssh Port, observe per-session connection progress and **incoming** SSH_MSG_NEWKEYS using a non-consuming packet callback. The custom observer returns `SSH_PACKET_NOT_USED` so the official libssh handler continues to validate and process the message. No SSH packets or crypto primitives are modified. This packet hook uses a **private libssh API**, so the Git commit stays pinned; compatibility is not guaranteed for future library upgrades.
+
+Expected structured Serial events (`elapsed_ms` relative to the start of `ssh_connect()`):
+
+- `BANNER_RX`: identification parsed by libssh (progress 0.4).
+- `KEXINIT_TX` and `KEXINIT_RX`: local send and peer reception progress events (0.5/0.6).
+- `KEXINIT | outcome=PASS` and `KEX_ALGORITHMS`: negotiation progressed (0.8).
+- `NEWKEYS_RX | state=OBSERVED_UNVALIDATED`: incoming message reached the callback, **not** proof of successful processing.
+- `KEX | outcome=PASS` and `NEWKEYS | outcome=PASS`: only if `ssh_connect() == SSH_OK` completes. Individual crypto and NEWKEYS processing durations are `NOT_MEASURED`.
+- `stop_stage=...`: conservative classification; `KEX_OR_NEWKEYS_UNKNOWN` remains ambiguous when the library cannot isolate exactly where it stalled.
+- `SERVICE_ACCEPT | outcome=...`: this stage is executed only after the separately validated host-key pin; it is `NOT_TESTED` on earlier failures.
+
+The stage observer is an **instrumentation experiment**, not an independent validated filtering signature. A timeout after NEWKEYS may still be caused by Wi-Fi, Edge, WireGuard, Core, or transient loss. The `NEWKEYS_RX` observation is intentionally not a `PASS` without successful transport completion.
+
+### Previously observed hardware results (before 1B.2 changes)
+
+- Phase 1B.1 was built and uploaded by the owner on the actual ESP32.
+- Multiple `SERVICE_ACCEPT_PASS` results with a matching trusted Core ED25519 host key.
+- Hotspot off => slow LED; reconnect => steady LED on subsequent SSH success.
+- A deliberately incorrect local pin => `HOST_KEY_MISMATCH` and `service_ms=0` (no service request).
+- These observations do **not** validate 1B.2: its first PlatformIO build, upload, and Serial output are pending.
+
+
 ## Isolation
 
 - Default `pio run` builds unchanged v0.0.4 from `src/main.cpp`.
@@ -59,4 +84,4 @@ The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 1
 4. **Protocol:** service accepted on known-good path; controlled timeout can be distinguished from KEX/transport failure.
 5. **Next phase:** instrument KEXINIT vs NEWKEYS separately and integrate into the original DNS/TCP/banner result model **only after explicit approval**.
 
-**No CI, build, flash or physical hardware validation has been run by this documentation change.**
+**1B.2 has not yet been built, flashed or hardware validated. Prior 1B.1 hardware results must not be relabeled as 1B.2 validation.**
