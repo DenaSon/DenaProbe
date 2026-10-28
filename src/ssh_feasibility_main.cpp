@@ -241,6 +241,29 @@ Result runSshTransport() {
     const bool dnsOk = WiFi.hostByName(PROBE_EDGE_HOST, address) == 1;
     result.dnsMs = millis() - dnsStart;
     if (!dnsOk) {
+        // When the Edge hostname cannot be resolved, run an independent,
+        // limited DNS-only control on the SAME hotspot resolver.
+        // No SSH connection is attempted. The result is not a censorship
+        // or general-internet verdict; some hosts may resolve selectively.
+        const IPAddress primaryDns = WiFi.dnsIP(0);
+        const IPAddress secondaryDns = WiFi.dnsIP(1);
+        const IPAddress gateway = WiFi.gatewayIP();
+        IPAddress controlAddress;
+        const uint32_t controlStart = millis();
+        const bool controlOk =
+            WiFi.hostByName("example.com", controlAddress) == 1;
+        const uint32_t controlMs = millis() - controlStart;
+        const String dns1 = primaryDns.toString();
+        const String dns2 = secondaryDns.toString();
+        const String gw = gateway.toString();
+        Serial.printf(
+            "[dns-diag] edge_resolve=FAIL | independent_control=example.com | "
+            "control_resolve=%s | control_ms=%lu | primary_dns=%s | "
+            "secondary_dns=%s | gateway=%s | "
+            "cause=UNCONFIRMED | dns_control_not_internet_speed_test\n",
+            controlOk ? "PASS" : "FAIL",
+            static_cast<unsigned long>(controlMs),
+            dns1.c_str(), dns2.c_str(), gw.c_str());
         result.code = Code::DNS_FAIL;
         return result;
     }
