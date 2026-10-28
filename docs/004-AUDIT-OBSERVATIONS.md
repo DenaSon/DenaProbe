@@ -83,3 +83,18 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Interpretation:** MCI ASN egress together with successful DNS and TCP are observed. SSH banner/KEX/authentication, proxy traffic, independent controls, NPV client outcome and exact Windows route-interface identity are **not yet measured on this corrected MCI path**.
 - **Prior results:** Earlier SSH login and SOCKS5 HTTPS successes were recorded while OS tunnel was on; those outcomes cannot serve as a controlled MCI baseline.
 
+
+
+## Observation A-MCI-SSH-06: SSH authentication and SOCKS listener (2026-10-28)
+
+- **Context:** Experimenter disabled Windows system tunnel/VPN and previously observed a direct public IPv4 assigned to MCI/AS197207. This SSH attempt followed that route validation; a simultaneous interface/egress capture was not made.
+- **Windows client:** OpenSSH 9.5p1, using `-v -N -T -D 127.0.0.1:1080 -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o PubkeyAuthentication=no` to a user-authorized SSH endpoint, TCP port 2252.
+- **TCP:** Connection established.
+- **SSH identification:** Remote SSH protocol 2.0 and OpenSSH 9.6p1 identification received.
+- **Key exchange:** KEXINIT sent/received; `curve25519-sha256` negotiated; host-key type `ssh-ed25519`; `chacha20-poly1305@openssh.com` encryption. ECDH reply and NEWKEYS exchange completed.
+- **Server authentication:** Previously known host-key matched the client's local known_hosts entry. This does not replace independent trusted fingerprint verification for new keys.
+- **User authentication:** Successful using `keyboard-interactive`.
+- **Local forwarding:** SOCKS listener bound to `127.0.0.1:1080`. No SSH shell requested.
+- **Not yet verified:** That server policy permits a forwarded application connection, any HTTPS data through the SOCKS tunnel on this no-VPN MCI run, UDPGW, or real NPV Tunnel user-experience.
+- **Status:** PASS through SSH user authentication and local SOCKS listener creation; data-path verification **pending**.
+
