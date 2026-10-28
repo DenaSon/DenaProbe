@@ -4,7 +4,7 @@
 
 DenaProbe is a small hardware research project for comparing healthy and disrupted network connectivity. The first experiment focuses on **MCI (Hamrah-e Aval) mobile internet**, accessed through a **2.4 GHz Wi-Fi hotspot** by an ESP32 DevKit.
 
-> Current status: hardware smoke test passed on ESP32-D0WD; **Wi-Fi link validation in progress**. No filtering classifier or production monitoring firmware exists yet.
+> Current status: hardware smoke test passed on ESP32-D0WD; **Wi-Fi link validated on Android hotspot; MCI healthy audit commencing**. No filtering classifier or production monitoring firmware exists yet.
 
 ## Phase boundaries
 
@@ -39,6 +39,7 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 
 - [Project scope](docs/001-PROJECT-SCOPE.md)
 - [Comparative audit methodology](docs/002-AUDIT-METHODOLOGY.md)
+- [Healthy MCI baseline runbook](docs/003-HEALTHY-BASELINE-RUNBOOK.md)
 
 ## Public repository safety
 
