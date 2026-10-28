@@ -305,8 +305,8 @@ void initializeReporting() {
              static_cast<unsigned long>(esp_random()));
     if (strlen(PROBE_REPORT_TOKEN) < 32 ||
         strlen(PROBE_REPORT_CA_PEM) < 100 ||
-        strcmp(PROBE_REPORT_DEVICE_ID, "probe_01") == 0 &&
-            strcmp(PROBE_REPORT_TOKEN, "REPLACE_WITH_RANDOM_64_HEX_CHARS") == 0) {
+        strstr(PROBE_REPORT_CA_PEM, "-----BEGIN CERTIFICATE-----") == nullptr ||
+        strcmp(PROBE_REPORT_TOKEN, "REPLACE_WITH_RANDOM_64_HEX_CHARS") == 0) {
         Serial.println("[telemetry] DISABLED | configure valid token and CA PEM");
     } else {
         Serial.println("[telemetry] CONFIGURED | HTTPS strict CA validation; awaiting NTP");
@@ -315,7 +315,7 @@ void initializeReporting() {
 
 bool reportingConfigValid() {
     return strlen(PROBE_REPORT_TOKEN) >= 32 && strlen(PROBE_REPORT_CA_PEM) >= 100
-           && strncmp(PROBE_REPORT_CA_PEM, "\n-----BEGIN CERTIFICATE-----", 28) == 0
+           && strstr(PROBE_REPORT_CA_PEM, "-----BEGIN CERTIFICATE-----") != nullptr
            && strcmp(PROBE_REPORT_TOKEN, "REPLACE_WITH_RANDOM_64_HEX_CHARS") != 0;
 }
 
