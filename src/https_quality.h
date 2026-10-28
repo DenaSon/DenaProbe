@@ -12,6 +12,12 @@
 namespace HttpsQuality {
 
 constexpr uint32_t kBodyBytes = 65536U;
+// Conservative incident heuristic: 64 KiB over >=4 seconds of body transfer
+// is <=16 KiB/s. This is a sample-level SUSPECT, not a validated SLA.
+#ifndef PROBE_HTTPS_SLOW_BODY_MS
+#define PROBE_HTTPS_SLOW_BODY_MS 4000U
+#endif
+constexpr uint32_t kSlowBodyThresholdMs = PROBE_HTTPS_SLOW_BODY_MS;
 constexpr uint32_t kMaxBodyMs = 12000U;
 constexpr uint32_t kMinFreeHeap = 95000U;
 constexpr uint32_t kMinLargestBlock = 46000U;
@@ -51,6 +57,7 @@ enum class Status : uint8_t {
     BODY_ERROR,
     BODY_TOO_LARGE,
     BODY_INCOMPLETE,
+    SLOW_64K_SAMPLE_SUSPECT,
     PASS
 };
 
@@ -67,6 +74,7 @@ const char *statusName(Status s) {
         case Status::BODY_ERROR: return "BODY_ERROR";
         case Status::BODY_TOO_LARGE: return "BODY_TOO_LARGE";
         case Status::BODY_INCOMPLETE: return "BODY_INCOMPLETE";
+        case Status::SLOW_64K_SAMPLE_SUSPECT: return "SLOW_64K_SAMPLE_SUSPECT";
         case Status::PASS: return "PASS";
     }
     return "UNKNOWN";
@@ -229,6 +237,9 @@ Result run() {
         result.approxKibPerSec = static_cast<uint32_t>(
             (static_cast<uint64_t>(kBodyBytes) * 1000ULL) /
             (static_cast<uint64_t>(ms) * 1024ULL));
+        if (kSlowBodyThresholdMs > 0 &&
+            result.bodyTransferMs >= kSlowBodyThresholdMs)
+            result.status = Status::SLOW_64K_SAMPLE_SUSPECT;
     }
     return result;
 }
