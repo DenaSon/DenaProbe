@@ -124,3 +124,12 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Interpretation:** A real application-data transfer via the SSH SOCKS path completed successfully in this sample. The earlier `google.com` SOCKS HTTPS attempt that timed out is **not** evidence of blanket SSH forwarding failure; it remains unexplained and may reflect a destination-specific or transient factor or a too-short timeout.
 - **Still not tested:** Successful NPV Tunnel application data, UDPGW, persistent connection stability, multiple matched rounds, target failure-state comparisons.
 - **Next test:** Retry `google.com` with verbose curl and a longer connection timeout, preserving the same tunnel and network conditions. Compare where it stops (SOCKS, TLS, HTTP) before attributing a cause.
+
+
+## Observation A-MCI-SOCKS-09: Local SOCKS listener refused connection (2026-10-28)
+
+- **Context:** After a successful `example.com` HTTPS transfer through SSH SOCKS (A-MCI-SOCKS-08), a later Google request was attempted with longer timeout.
+- **Command class:** curl `--proxy socks5h://127.0.0.1:1080 --connect-timeout 20 --max-time 40`.
+- **Observed error:** `curl: (7) Failed to connect to 127.0.0.1 port 1080 after 2045 ms: Could not connect to server`. Verbose output reported TCP **Connection refused** at the local proxy endpoint.
+- **Interpretation:** The failure occurred **before SOCKS5 negotiation and before any destination/SSH forwarding request**. It cannot be attributed to Google reachability, MCI network filtering, or remote SSH server behavior from this log alone. Likely no process was listening on port 1080 at that moment; SSH tunnel may have terminated, but that cause is not yet independently confirmed.
+- **Next diagnostic:** Use Windows `Get-NetTCPConnection -LocalPort 1080 -State Listen -ErrorAction SilentlyContinue` to inspect local listener; inspect the SSH window and re-establish the SOCKS tunnel as needed. Re-run endpoint tests only once the local listener is verified.
