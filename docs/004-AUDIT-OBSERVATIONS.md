@@ -334,3 +334,16 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **User report:** The owner says the firmware upload to the physical ESP32 **completed successfully**. No uploader transcript or serial log was pasted in this turn.
 - **Classification:** **FLASH PASS — operator-reported**, awaiting independent confirmation of the running image and successful Wi-Fi/DNS/TCP/SSH identification probing via serial output.
 - **Next control:** Run `pio device monitor -b 115200` from the repository directory and record one complete `[probe] START` through `[probe] END` sequence; optionally reset the device to show its firmware banner. Do not publish raw serial output exposing the private Edge hostname/IP, network SSID, or other sensitive local-network details.
+
+
+## Observation B-ESP32-PROBE-30: First successful hardware DNS/TCP/SSH identification (2026-10-28)
+
+- **Evidence:** Owner supplied a fresh ESP32 serial-monitor excerpt from firmware `DenaProbe v0.0.3` after reportedly successful flash. Hardware identifies as **ESP32-D0WD**, CPU **240 MHz**, flash reported **4,194,304 bytes**. Actual probe ran at uptime **22,843 ms**. No raw serial transcript copied to public repo.
+- **Wi-Fi:** Initial association did not complete until the controlled **20-second retry**. Logs showed `status 0 → 6`, repeated WAITING, then `status 6 → 0 → 3` and `CONNECTED`. Gateway/DNS returned a private RFC1918 hotspot address; exact SSID and internal addresses are intentionally omitted. RSSI at probe start **-48 dBm**, subsequent periodic reports between **-45 and -49 dBm**.
+- **DNS:** `[dns] PASS`, resolution took **26 ms** and returned the **current Edge IPv4** previously observed in Windows for the reference hostname. The address is redacted here.
+- **TCP:** `[tcp] PASS`, TCP connect to public Edge **port 2252** completed in **320 ms**.
+- **SSH identification:** `[ssh-id] PASS`, received syntactically valid protocol `SSH-2.0` identification in **1,233 ms**, measured **after** TCP connect (not a VPN RTT).
+- **RAM observation:** periodic `free_heap=232644` bytes reported after the first probe, without visible change over the pasted subsequent status lines. This is **runtime free heap**, distinct from the PlatformIO static RAM estimate.
+- **Classification:** **REAL HARDWARE PROBE PASS (1 measured cycle): DNS/TCP/SSH-ID**. All three stages succeeded, consistent with previously operator-reported healthy NPV application behavior through the new Edge. No SSH KEX, login, Core forwarding, HTTPS inside NPV, or classifier verdict is implemented or demonstrated by this probe.
+- **Limits:** One successful measurement cannot establish 60-second interval reliability or failure-detection sensitivity. Initial Wi-Fi association delay is an independent issue, not evidence of Edge filtering. The Wi-Fi hotspot route may not match the NPV app's own phone traffic route; avoid treating these as identical measurement paths.
+- **Next:** Without changing configuration, let Serial Monitor collect **three complete successive probe cycles** (normally about one minute apart), then share sanitized START/DNS/TCP/SSH-ID/END and Wi-Fi disconnect lines. Evaluate variation and possible memory/resource regressions before any firmware change.
