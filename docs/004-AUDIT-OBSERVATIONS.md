@@ -71,3 +71,15 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 **Interpretation:** Distinct proxy and non-curl-proxy egress IPs are confirmed, but **the intended no-VPN MCI baseline is not verified** and is likely confounded by an OS/network tunnel or alternate active uplink. Note that `--noproxy "*"` only bypasses curl's proxy settings; it cannot disable a system-wide VPN/TUN route.
 
 **Next step:** Disable OS-level tunnel and proxies temporarily for the controlled run; ensure the Windows active Wi-Fi is the Android MCI hotspot; recheck **no-proxy** public IP/ASN and route selection. Avoid private or server IPs in published audit records.
+
+
+## Observation A-MCI-TCP-05: First no-VPN MCI egress and TCP connection (2026-10-28)
+
+- **Experimenter condition:** Previous system VPN/tunnel was disabled; Android hotspot uplink was reported as MCI.
+- **No-curl-proxy public egress:** IP was in **95.64.64.0/18** (exact dynamic customer IP intentionally redacted); that network range is registered to MCCI / **AS197207**. Public sources: https://www.ipregistry.co/AS197207 and https://www.ipxo.com/ip-info/95.64.107.155/24/ .
+- **DNS resolution:** Windows resolved the user-approved SSH host to an IPv4 destination.
+- **TCP connect:** Windows `Test-NetConnection -Port 2252 -InformationLevel Detailed` returned `TcpTestSucceeded : True`.
+- **Windows source interface:** `Ethernet 2`, source in RFC1918 range; private next-hop in RFC1918 range. Could be USB tethering or virtual adapter: **interface type not verified**. Do not silently equate this Windows route with ESP32 Wi-Fi hotspot path.
+- **Interpretation:** MCI ASN egress together with successful DNS and TCP are observed. SSH banner/KEX/authentication, proxy traffic, independent controls, NPV client outcome and exact Windows route-interface identity are **not yet measured on this corrected MCI path**.
+- **Prior results:** Earlier SSH login and SOCKS5 HTTPS successes were recorded while OS tunnel was on; those outcomes cannot serve as a controlled MCI baseline.
+
