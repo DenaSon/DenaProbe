@@ -40,6 +40,8 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 - [Project scope](docs/001-PROJECT-SCOPE.md)
 - [Comparative audit methodology](docs/002-AUDIT-METHODOLOGY.md)
 - [Healthy MCI baseline runbook](docs/003-HEALTHY-BASELINE-RUNBOOK.md)
+- [Recorded device observations and hardware validation](docs/004-AUDIT-OBSERVATIONS.md)
+- [Filtered-path audit evidence and ESP32 design inputs (SSH / HTTPS)](docs/006-FILTERED-PATH-AUDIT-2026-10-29.md)
 
 ## Public repository safety
 
