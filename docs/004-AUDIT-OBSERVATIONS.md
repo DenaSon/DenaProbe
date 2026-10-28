@@ -179,3 +179,12 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **example.com repeat, local DNS IPv4:** curl resolved `172.66.147.243` and `104.20.23.154`, and tried SOCKS CONNECT to `172.66.147.243:443`. No `SOCKS5 request granted` message was received. `curl: (28) Connection timed out after 15005 milliseconds`, `HTTP=000`, `time_total=15.009215 s`. A previous example.com request via **socks5h** had succeeded with HTTP 200 and response body; hostname-resolution mode and possible destination IP differed between those trials.
 - **Interpretation:** Observed differences by request, time, and/or target network route. The example.com failure occurred *before completing the SOCKS CONNECT operation*; the previous Google TLS failure occurred *after* SOCKS CONNECT was granted. Do **not** label either as proven carrier filtering, DPI, traffic throttling, or blanket failure of SSH; remote server egress and timing remain confounders.
 - **Next discriminating measurement:** Pair a direct (no proxy) HTTPS control to the exact resolved example.com IPv4 with a SOCKS HTTPS request in the same time window, keep endpoint IP fixed and examine the SSH client for channel-open errors. Repeat and time-stamp runs before deriving reliability metrics.
+
+
+## Observation A-MCI-HTTP-14: Direct pinned-IP example.com control succeeds (2026-10-28)
+
+- **Context:** Windows VPN reportedly disabled and direct public egress previously attributed to MCI; same investigation period as A-MCI-MIXED-13. Actual access interface/egress not rechecked during this request.
+- **Request:** Windows curl `-4 --noproxy "*" --resolve "example.com:443:172.66.147.243" --connect-timeout 15 --max-time 30` for `https://example.com/`. DNS-to-IP mapping was pinned while retaining URL hostname for TLS.
+- **Result:** HTTP **200** from `172.66.147.243`; TCP connect elapsed **0.138101 s**; cumulative TLS completion time **0.427458 s**; total request **0.603121 s**.
+- **Contrast:** An earlier SSH SOCKS5 request for the same target IP timed out after 15 s *before* `SOCKS5 request granted`. These requests were not simultaneous. A successful direct connection does **not** locate the cause of the forwarded failure: the path from the remote SSH server to destination differs from the client direct route.
+- **Next test:** Pin the same target IP using `--resolve` while proxying via `socks5://127.0.0.1:1080`, with the persistent SSH tunnel active, and capture the stage and timing. Repeat matched pairs and collect SSH client channel diagnostics as needed.
