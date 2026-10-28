@@ -32,3 +32,18 @@
 ### Privacy note
 
 The initial log shared privately contained locally identifying details and connection metadata; it must **not** be copied wholesale into this public repository. The credential used in the experiment should be rotated/revoked after testing.
+
+
+## Observation A-SSH-02: SSH dynamic forwarding / HTTPS response
+
+- **Date:** 2026-10-28 (exact client timestamp and time zone not captured).
+- **Client path:** Windows host -> SSH reference account (authenticated by keyboard-interactive) -> local dynamic SOCKS listener -> HTTPS request. Experimenter reported MCI hotspot connectivity; the Windows route/egress operator was not independently verified by this record.
+- **OpenSSH dynamic forwarding:** `-N -T -D 127.0.0.1:1080`; SSH log confirmed listener and authenticated session.
+- **Application test:** `curl.exe --proxy socks5h://127.0.0.1:1080 ... https://google.com`.
+- **Observed result:** HTTP `301`, response body **220 bytes**, curl total request time **0.868949 s**.
+- **SSH channel:** Dynamic `direct-tcpip` channel opened for `google.com:443` and later closed; closure by itself is not an error.
+- **Interpretation:** Successful HTTPS response traversed the SSH SOCKS5 forwarding path in this one sample. `301` is a redirect, not a failed HTTP transaction. `time_total` is not network RTT, SSH handshake latency, or throughput.
+- **Unverified:** Following the redirect to a final page, data throughput, long-lived stability, UDP/UDPGW, NPV Tunnel actual behavior, the routing of Windows over MCI rather than another network, and independent no-proxy controls.
+- **DNS nuance:** `socks5h://` asks the SOCKS proxy side to resolve the HTTP target name; this does not establish that the Windows local DNS resolver could resolve `google.com`.
+- **Next step:** Compare an ordinary HTTPS request without proxy under otherwise identical Windows / MCI conditions; then repeat via SSH and compare, recording outcomes and elapsed times.
+
