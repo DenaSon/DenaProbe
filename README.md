@@ -1,5 +1,7 @@
 # DenaProbe
 
+> **v0.0.5 candidate (2026-10-28; SOURCE ONLY):** Optional CA-validated HTTPS telemetry reporting to the Python NVL bot receiver, guarded by ignored `include/probe_report_private.h`. Existing v0.0.4 GPIO2 LED and Edge probes remain active without telemetry config. The feature is not yet built or field-tested. Read [NVL telemetry integration](docs/005-NVL-TELEMETRY-INTEGRATION.md). No Core IP, bot token, or SSH credentials should ever be included.
+
 **Evidence-first ESP32 network connectivity research probe.**
 
 DenaProbe is a small hardware research project for comparing healthy and disrupted network connectivity. The first experiment focuses on **MCI (Hamrah-e Aval) mobile internet**, accessed through a **2.4 GHz Wi-Fi hotspot** by an ESP32 DevKit.
