@@ -326,3 +326,11 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Memory footprint from PlatformIO build:** static RAM reported as **46,968 / 327,680 bytes (14.3%)**; program image reported as **949,060 / 1,310,720 bytes (72.4%)** of the configured application partition. These figures are build-time estimates, not runtime heap usage or total physical flash capacity.
 - **Classification:** Firmware **BUILD PASS**, with no reported compiler/linker errors. This does **not** prove USB upload, Wi-Fi association, DNS/TCP probes, SSH identification or operation on a physical ESP32.
 - **Next:** Flash firmware to the connected ESP32 using `pio run -t upload`, then validate serial logs; keep serial monitor closed during upload and avoid posting unredacted infrastructure information publicly.
+
+
+## Observation B-ESP32-FLASH-29: v0.0.3 upload reported successful (2026-10-28)
+
+- **Prerequisite:** Local PlatformIO build for `esp32dev` v0.0.3 was previously successful (B-ESP32-BUILD-28).
+- **User report:** The owner says the firmware upload to the physical ESP32 **completed successfully**. No uploader transcript or serial log was pasted in this turn.
+- **Classification:** **FLASH PASS — operator-reported**, awaiting independent confirmation of the running image and successful Wi-Fi/DNS/TCP/SSH identification probing via serial output.
+- **Next control:** Run `pio device monitor -b 115200` from the repository directory and record one complete `[probe] START` through `[probe] END` sequence; optionally reset the device to show its firmware banner. Do not publish raw serial output exposing the private Edge hostname/IP, network SSID, or other sensitive local-network details.
