@@ -347,3 +347,25 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Classification:** **REAL HARDWARE PROBE PASS (1 measured cycle): DNS/TCP/SSH-ID**. All three stages succeeded, consistent with previously operator-reported healthy NPV application behavior through the new Edge. No SSH KEX, login, Core forwarding, HTTPS inside NPV, or classifier verdict is implemented or demonstrated by this probe.
 - **Limits:** One successful measurement cannot establish 60-second interval reliability or failure-detection sensitivity. Initial Wi-Fi association delay is an independent issue, not evidence of Edge filtering. The Wi-Fi hotspot route may not match the NPV app's own phone traffic route; avoid treating these as identical measurement paths.
 - **Next:** Without changing configuration, let Serial Monitor collect **three complete successive probe cycles** (normally about one minute apart), then share sanitized START/DNS/TCP/SSH-ID/END and Wi-Fi disconnect lines. Evaluate variation and possible memory/resource regressions before any firmware change.
+
+
+## Observation B-ESP32-PROBE-31: Six successive healthy hardware DNS/TCP/SSH-ID cycles (2026-10-28)
+
+- **Provenance:** User-provided serial monitor excerpt from a single ESP32-D0WD running v0.0.3, after one initial hotspot Wi-Fi association retry. This includes the first cycle already documented in B-ESP32-PROBE-30; it is **not six additional independent cycles**. Public note intentionally omits the SSID, Edge IP, and other identifying addresses.
+- **Run coverage:** 6 complete, successful cycles with monotonic device uptime starts at **22,843**, **82,863**, **142,948**, **202,958**, **262,970**, **322,973 ms** (successive intervals 60,020, 60,085, 60,010, 60,012, 60,003 ms). Span first-to-last probe approximately **300.13 s**. All six ended in `SSH_ID_PASS`; **no DNS/TCP/SSH-ID failure observed** during this short sample.
+
+| Cycle | DNS ms | TCP ms | SSH-ID ms | Result |
+|---:|---:|---:|---:|---|
+| 1 | 26 | 320 | 1233 | PASS |
+| 2 | 147 | 198 | 213 | PASS |
+| 3 | 1 | 268 | 213 | PASS |
+| 4 | 268 | 309 | 313 | PASS |
+| 5 | 1 | 263 | 213 | PASS |
+| 6 | 270 | 203 | 213 | PASS |
+
+- **DNS:** Same Edge-address result across all six cycles; DNS duration **1–270 ms**, median **86.5 ms**, potentially affected by resolver caching (not proven). Endpoint IP intentionally redacted.
+- **TCP:** Port **2252**, all six completed, **198–320 ms**, median **265.5 ms**. This measures TCP connect time via current hotspot and Edge, **not** NPV tunnel RTT.
+- **SSH identification:** Protocol `SSH-2.0` returned successfully in each cycle; one initial **1233 ms** result and five later **213–313 ms** results; median **213 ms**. These are elapsed time after completed TCP connects; they do not measure SSH authentication, KEX, forwarding, or tunnel data transfer.
+- **Wi-Fi/heap:** No post-association Wi-Fi disconnect in user excerpt. RSSI from **-45 to -54 dBm** for all reported samples. Runtime free heap after first cycle **232,644 B**, later cycle readings mostly **232,384–232,448 B**, with last seen **232,416 B**: no obvious steadily growing leak in this ~5-minute capture, but insufficient for long-term leak exclusion. Initial Wi-Fi connection required one retry after 20 s (already recorded).
+- **Interpretation:** **PASS: repeated short healthy hardware baseline** (six passes over five minutes). This matches the operator's qualitative healthy NPV report through the new Edge, but alone cannot estimate long-term service availability, distinguish deliberate filtering from network/server faults, validate traffic over Core, or guarantee client applications work. All measurements are from this device's hotspot path, which is not necessarily the phone's own tunneled path.
+- **Next design priority:** Add independent internet control and clear failure-domain labels to differentiate loss of Wi-Fi/mobile underlay from loss of reachability to Edge; validate induced failures and pair them with actual NPV client status. Do not turn single DNS/TCP/banner failures into censorship verdicts, and avoid repeating more healthy reloads without new diagnostic controls.
