@@ -36,6 +36,7 @@ The stage observer is an **instrumentation experiment**, not an independent vali
 This experimental firmware uses one no-auth SSH check every **30 seconds** (rather than 60 seconds), retains a **12-result ring buffer** in RAM (about six minutes), and emits:
 
 - `[quality-link]`: Wi-Fi hotspot UP/DOWN transitions with uptime timestamp and cumulative Wi-Fi drop events since boot, including drops that occur between scheduled SSH probes.
+- `[dns-diag]` (on `DNS_FAIL` only): logs phone-hotspot-configured primary/secondary DNS and gateway IPs, then resolves an independent control name (`example.com`) **via the current system resolver**. `control_resolve=PASS` + Edge DNS fail suggests a hostname-specific resolution issue; both failed suggests a broader DNS issue. Neither is proof of filtering, full internet access or a throughput problem. Control may fail on a restricted link; all outcomes remain `cause=UNCONFIRMED`.
 - `[quality-sample]`: sequence, timestamp since boot, measured hotspot **Wi-Fi RSSI** (never LTE signal), DNS, SSH transport, service-accept durations, and observed KEXINIT / NEWKEYS elapsed-time gaps. The latter are timing intervals, **not** pure crypto execution durations or packet RTTs.
 - `[quality-window]`: number of eligible runs, successes, connectivity failures (Wi-Fi loss, DNS, transport or service failures), separately counted Wi-Fi losses, excluded local security/resource errors, SSH transport p50/p90, span (max-min), and DNS/service p50 calculated **only from successful runs**.
 - `download_speed=UNKNOWN`, `throughput=NOT_TESTED`, `packet_loss=NOT_MEASURED`: avoids claiming any data-transfer measurement. Handshake timing cannot establish bandwidth, real VPN performance, or cellular packet loss.
@@ -55,6 +56,10 @@ The buffer contains only volatile, aggregate metrics. It is cleared after reset 
 **Capture procedure (PowerShell):** `git pull --ff-only`, then `pio run -e esp32dev_ssh_feasibility`, then `pio run -e esp32dev_ssh_feasibility -t upload`, then `pio device monitor -b 115200`. Run one command at a time. Keep the phone connected to the **MCI LTE hotspot**, do not switch carriers during one window, and record the contemporaneous NPV Tunnel slowdown separately. Capture at least 12 samples / approximately six minutes. Compare with a later known-good window on the same path. Do not label the device's Wi-Fi RSSI as LTE signal.
 
 **Acceptance pending:** successful PlatformIO build and flash; no restart, watchdog or heap trend; 12-sample wrap without corruption; Wi-Fi-off recovery; and comparison against a real healthy/slow reference. Do not merge until approved.
+
+### Field observation — 2026-10-29 incident
+
+Four consecutive DNS failures were captured 30 seconds apart after the ESP32 hotspot Wi-Fi went UP. Target name resolution failed quickly (about 10–16 ms); SSH KEXINIT, NEWKEYS and SERVICE_ACCEPT were correctly `NOT_TESTED`. The quality window reported `PATH_FAILURES_OBSERVED` at eligible=4/pass=0, with Wi-Fi RSSI between approximately −50 and −61 dBm. This establishes **DNS-stage failure on this hotspot path**, not download speed reduction, a server outage, censorship, or a hardware defect. The follow-up DNS-control probe was added to distinguish target-specific from broader resolver failure. **Its first local build, upload and hardware validation remain pending.**
 
 ## Isolation
 
