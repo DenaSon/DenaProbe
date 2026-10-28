@@ -13,6 +13,7 @@
 #include <libssh/packet.h> // Pinned-port internal API: observe packets, never consume them.
 #include <libssh/ssh2.h>
 #include "wifi_config.h"
+#include "https_quality.h"
 
 #if __has_include("probe_private.h")
 #include "probe_private.h"
@@ -27,6 +28,10 @@
 
 // Optional, explicitly validated healthy-path reference. Zero disables
 // latency alerts. Do not calibrate against an ongoing incident.
+#ifndef PROBE_HTTPS_QUALITY_ENABLED
+#define PROBE_HTTPS_QUALITY_ENABLED 1
+#endif
+
 #ifndef PROBE_QUALITY_HEALTHY_TRANSPORT_MS
 #define PROBE_QUALITY_HEALTHY_TRANSPORT_MS 0
 #endif
@@ -39,9 +44,10 @@ constexpr uint32_t kRetryWiFiMs = 20000;
 // Incident-capture only: two lightweight SSH handshakes per minute.
 constexpr uint32_t kProbeIntervalMs = 30000;
 constexpr uint8_t kQualityWindowSamples = 12;
+constexpr uint32_t kHttpsIntervalMs = 180000U; // 64 KiB every 3min ≈ 30MiB/day.
 constexpr uint32_t kConnectDeadlineMs = 12000;
 constexpr uint32_t kServiceDeadlineMs = 8000;
-constexpr uint32_t kTaskStalledMs = 30000;
+constexpr uint32_t kTaskStalledMs = 55000; // Sequential SSH + HTTPS task.
 constexpr uint32_t kWorkerStackBytes = 51200;
 constexpr uint32_t kRequiredHeapBeforeTask = 110000;
 constexpr uint8_t kLedPin = 2;  // ESP32 DEVKITV1 onboard blue LED, active HIGH
@@ -110,6 +116,8 @@ struct Result {
     uint32_t stackWatermark;
     uint32_t startedAt;
     int16_t wifiRssiDbm; // Phone hotspot Wi-Fi signal; NOT cellular LTE RSSI.
+    bool httpsRan = false;
+    HttpsQuality::Result https{};
 };
 
 struct SessionOwner {
@@ -151,6 +159,12 @@ uint32_t lastWiFiAttemptMs = 0;
 uint32_t lastProbeMs = 0;
 uint32_t workerStartMs = 0;
 uint32_t probeSequence = 0;
+bool httpsScheduleReady = true;
+bool httpsWorkerEnabled = false;
+uint32_t lastHttpsScheduleMs = 0;
+bool httpsLastMeasured = false;
+HttpsQuality::Status lastHttpsStatus = HttpsQuality::Status::NOT_TESTED;
+uint32_t lastHttpsResultAtMs = 0;
 uint32_t wifiDownTransitions = 0; // Since boot, not limited to the result window.
 bool wifiStatusInitialized = false;
 bool previousWifiConnected = false;
@@ -374,7 +388,11 @@ Result runSshTransport() {
 }
 
 void sshWorker(void *) {
-    Result result = runSshTransport();
+    Result result = runSshTransport(); // libssh session fully freed on return.
+    if (httpsWorkerEnabled) {
+        result.httpsRan = true;
+        result.https = HttpsQuality::run(); // Separate HTTPS request and result.
+    }
     result.freeHeap = ESP.getFreeHeap();
     result.minimumHeap = ESP.getMinFreeHeap();
     result.largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -564,6 +582,47 @@ void printQuality(const Result &result) {
         static_cast<long>(medianService), qualityFlag);
 }
 
+void printHttpsResult(const Result &result) {
+    if (!result.httpsRan) return;
+    const HttpsQuality::Result &h = result.https;
+    Serial.printf(
+        "[https-quality] target=cloudflare_speed_test | path=DIRECT_HOTSPOT_NOT_VPN | "
+        "result=%s | bytes=%lu/%lu | dns_ms=%lu | headers_ms=%lu | "
+        "first_body_ms=%lu | body_transfer_ms=%lu | total_ms=%lu | "
+        "body_rate_kibps_approx=%lu | http_code=%d | stream_code=%d | "
+        "tls_cert_check=ENABLED | vpn_data_path=NOT_TESTED | "
+        "telegram_update=NOT_TESTED | general_internet_verdict=INCONCLUSIVE\n",
+        HttpsQuality::statusName(h.status),
+        static_cast<unsigned long>(h.bytes),
+        static_cast<unsigned long>(HttpsQuality::kBodyBytes),
+        static_cast<unsigned long>(h.dnsMs),
+        static_cast<unsigned long>(h.headersMs),
+        static_cast<unsigned long>(h.firstBodyMs),
+        static_cast<unsigned long>(h.bodyTransferMs),
+        static_cast<unsigned long>(h.totalMs),
+        static_cast<unsigned long>(h.approxKibPerSec),
+        h.httpCode, h.httpStreamResult);
+}
+void printOverall(const Result &result) {
+    const bool httpsFresh = httpsLastMeasured &&
+        millis() - lastHttpsResultAtMs < 2U * kHttpsIntervalMs;
+    const char *overall =
+        WiFi.status() != WL_CONNECTED ? "WIFI_DOWN" :
+        result.code != Code::PASS ? "SSH_NOT_READY" :
+        !PROBE_HTTPS_QUALITY_ENABLED ? "SSH_PASS_HTTPS_DISABLED" :
+        !httpsFresh ? "SSH_PASS_HTTPS_NOT_MEASURED" :
+        lastHttpsStatus == HttpsQuality::Status::PASS
+            ? "SSH_AND_PUBLIC_HTTPS_PASS_VPN_UNKNOWN" :
+        (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY ||
+         lastHttpsStatus == HttpsQuality::Status::LOW_MEMORY)
+            ? "SSH_PASS_HTTPS_UNMEASURABLE" :
+              "SSH_PASS_PUBLIC_HTTPS_FAILED_OR_INCOMPLETE";
+    Serial.printf("[probe-overall] ssh=%s | https=%s | status=%s | "
+                  "vpn=NOT_TESTED | filtering_verdict=INCONCLUSIVE\n",
+                  codeName(result.code),
+                  httpsFresh ? HttpsQuality::statusName(lastHttpsStatus) : "NOT_TESTED",
+                  overall);
+}
 void printResult(const Result &result) {
     const StageTrace &stage = result.stages;
     Serial.printf("[ssh-stage] BANNER_RX | state=%s | elapsed_ms=%ld\n",
@@ -628,7 +687,13 @@ void setup() {
     delay(1500);
     pinMode(kLedPin, OUTPUT);
     updateLed();
-    Serial.println("=== DenaProbe | Phase 1B.3 quality capture (experimental) ===");
+    Serial.println("=== DenaProbe | Phase 1B.3 independent HTTPS sample (experimental) ===");
+    Serial.printf("[https-config] enabled=%d | interval_ms=%lu | sample_bytes=%lu | "
+                  "target=cloudflare_speed_test | ca=GTS_ROOT_R4 | "
+                  "tls_verify=REQUIRED | vpn_path=NOT_TESTED\n",
+                  PROBE_HTTPS_QUALITY_ENABLED,
+                  static_cast<unsigned long>(kHttpsIntervalMs),
+                  static_cast<unsigned long>(HttpsQuality::kBodyBytes));
     Serial.printf("[quality-config] interval_ms=%lu | window=%u | "
                   "reference_transport_ms=%lu | alert_ratio_percent=%lu | "
                   "baseline_trust=OPERATOR_VALIDATED_ONLY | speed_test=NO\n",
@@ -667,6 +732,9 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);
     connectWiFi();
+    if (PROBE_HTTPS_QUALITY_ENABLED) {
+        configTime(0, 0, "time.cloudflare.com", "pool.ntp.org");
+    }
 }
 
 void loop() {
@@ -694,8 +762,25 @@ void loop() {
         workerRunning = false;
         printResult(result);
         printQuality(result);
+        printHttpsResult(result);
+        if (result.httpsRan) {
+            httpsLastMeasured = true;
+            lastHttpsStatus = result.https.status;
+            lastHttpsResultAtMs = millis();
+            if (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY)
+                httpsScheduleReady = true; // Retry at next SSH probe.
+        }
+        printOverall(result);
+        const bool httpsFresh = httpsLastMeasured &&
+            millis() - lastHttpsResultAtMs < 2U * kHttpsIntervalMs;
         ledMode = (WiFi.status() != WL_CONNECTED) ? LedMode::WIFI_WAIT :
-                  result.code == Code::PASS ? LedMode::SSH_READY : LedMode::SUSPECT;
+                  result.code != Code::PASS ? LedMode::SUSPECT :
+                  !PROBE_HTTPS_QUALITY_ENABLED ? LedMode::SSH_READY :
+                  !httpsFresh ? LedMode::PARTIAL :
+                  lastHttpsStatus == HttpsQuality::Status::PASS ? LedMode::SSH_READY :
+                  (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY ||
+                   lastHttpsStatus == HttpsQuality::Status::LOW_MEMORY)
+                       ? LedMode::PARTIAL : LedMode::SUSPECT;
     }
 
     if (WiFi.status() != WL_CONNECTED) {
@@ -713,6 +798,13 @@ void loop() {
             ledMode = LedMode::SUSPECT;
         } else {
             ledMode = LedMode::PARTIAL;
+            httpsWorkerEnabled = PROBE_HTTPS_QUALITY_ENABLED &&
+                (httpsScheduleReady ||
+                 (now - lastHttpsScheduleMs >= kHttpsIntervalMs));
+            if (httpsWorkerEnabled) {
+                httpsScheduleReady = false;
+                lastHttpsScheduleMs = now;
+            }
             Serial.println("[ssh-deep] START | separate_tcp_session=yes | "
                            "vantage=HOTSPOT_DECLARED | no_filtering_verdict");
             const BaseType_t created = xTaskCreatePinnedToCore(
@@ -721,6 +813,7 @@ void loop() {
             workerStartMs = now;
             if (!workerRunning) {
                 Serial.println("[ssh-deep] NOT_TESTED | reason=TASK_ALLOC_FAILED");
+                if (httpsWorkerEnabled) httpsScheduleReady = true;
                 ledMode = LedMode::SUSPECT;
             }
         }
