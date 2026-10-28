@@ -13,7 +13,6 @@
 #include <libssh/packet.h> // Pinned-port internal API: observe packets, never consume them.
 #include <libssh/ssh2.h>
 #include "wifi_config.h"
-#include "https_quality.h"
 
 #if __has_include("probe_private.h")
 #include "probe_private.h"
@@ -25,6 +24,9 @@
 #ifndef PROBE_SSH_PIN_SHA256_HEX
 #define PROBE_SSH_PIN_SHA256_HEX ""
 #endif
+
+// Included after local ignored configuration for optional sample threshold.
+#include "https_quality.h"
 
 // Optional, explicitly validated healthy-path reference. Zero disables
 // latency alerts. Do not calibrate against an ongoing incident.
@@ -613,6 +615,8 @@ void printOverall(const Result &result) {
         !httpsFresh ? "SSH_PASS_HTTPS_NOT_MEASURED" :
         lastHttpsStatus == HttpsQuality::Status::PASS
             ? "SSH_AND_PUBLIC_HTTPS_PASS_VPN_UNKNOWN" :
+        lastHttpsStatus == HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT
+            ? "SSH_PASS_PUBLIC_HTTPS_SLOW_SUSPECT" :
         (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY ||
          lastHttpsStatus == HttpsQuality::Status::LOW_MEMORY)
             ? "SSH_PASS_HTTPS_UNMEASURABLE" :
@@ -690,10 +694,12 @@ void setup() {
     Serial.println("=== DenaProbe | Phase 1B.3 independent HTTPS sample (experimental) ===");
     Serial.printf("[https-config] enabled=%d | interval_ms=%lu | sample_bytes=%lu | "
                   "target=cloudflare_speed_test | ca=GTS_ROOT_R4 | "
-                  "tls_verify=REQUIRED | vpn_path=NOT_TESTED\n",
+                  "tls_verify=REQUIRED | slow_body_threshold_ms=%lu | "
+                  "vpn_path=NOT_TESTED\n",
                   PROBE_HTTPS_QUALITY_ENABLED,
                   static_cast<unsigned long>(kHttpsIntervalMs),
-                  static_cast<unsigned long>(HttpsQuality::kBodyBytes));
+                  static_cast<unsigned long>(HttpsQuality::kBodyBytes),
+                  static_cast<unsigned long>(HttpsQuality::kSlowBodyThresholdMs));
     Serial.printf("[quality-config] interval_ms=%lu | window=%u | "
                   "reference_transport_ms=%lu | alert_ratio_percent=%lu | "
                   "baseline_trust=OPERATOR_VALIDATED_ONLY | speed_test=NO\n",
