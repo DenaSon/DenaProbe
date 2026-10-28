@@ -47,3 +47,14 @@ The initial log shared privately contained locally identifying details and conne
 - **DNS nuance:** `socks5h://` asks the SOCKS proxy side to resolve the HTTP target name; this does not establish that the Windows local DNS resolver could resolve `google.com`.
 - **Next step:** Compare an ordinary HTTPS request without proxy under otherwise identical Windows / MCI conditions; then repeat via SSH and compare, recording outcomes and elapsed times.
 
+
+
+## Observation A-HTTP-03: Direct versus SOCKS curl on 2026-10-28
+
+- **Request:** `https://google.com` (no redirect following; HTTP 301).
+- **Direct:** `curl.exe --noproxy "*"` with 10 s connect / 25 s overall timeout. Result **HTTP 301**, **220 B**, `time_total=0.868761 s`.
+- **Via SSH:** `curl.exe --proxy socks5h://127.0.0.1:1080` with equivalent timeouts. Result **HTTP 301**, **220 B**, `time_total=0.868949 s`.
+- **What this shows:** Both tested client paths produced HTTP responses; the SSH log independently shows a SOCKS dynamic-tcpip channel for `google.com:443`.
+- **What it does not show:** A meaningful performance difference (one observation each); identical response body (only byte counts match); MCI-only path attribution; no Windows OS-level VPN; that NPV Tunnel/UDPGW works. `--noproxy "*"` skips curl proxy configuration but is not a bypass for VPN network interfaces or network-wide tunnels.
+- **Next check:** With OS-level tunnel disabled and Windows attached to the Android MCI hotspot, compare public egress IP for direct versus SOCKS requests. Avoid committing full logs, client identifiers or public IPs without review.
+
