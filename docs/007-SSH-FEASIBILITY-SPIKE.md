@@ -35,7 +35,7 @@ The stage observer is an **instrumentation experiment**, not an independent vali
 
 This experimental firmware uses one no-auth SSH check every **30 seconds** (rather than 60 seconds), retains a **12-result ring buffer** in RAM (about six minutes), and emits:
 
-- `[quality-link]`: Wi-Fi hotspot UP/DOWN transitions with uptime timestamp.
+- `[quality-link]`: Wi-Fi hotspot UP/DOWN transitions with uptime timestamp and cumulative Wi-Fi drop events since boot, including drops that occur between scheduled SSH probes.
 - `[quality-sample]`: sequence, timestamp since boot, measured hotspot **Wi-Fi RSSI** (never LTE signal), DNS, SSH transport, service-accept durations, and observed KEXINIT / NEWKEYS elapsed-time gaps. The latter are timing intervals, **not** pure crypto execution durations or packet RTTs.
 - `[quality-window]`: number of eligible runs, successes, connectivity failures (Wi-Fi loss, DNS, transport or service failures), separately counted Wi-Fi losses, excluded local security/resource errors, SSH transport p50/p90, span (max-min), and DNS/service p50 calculated **only from successful runs**.
 - `download_speed=UNKNOWN`, `throughput=NOT_TESTED`, `packet_loss=NOT_MEASURED`: avoids claiming any data-transfer measurement. Handshake timing cannot establish bandwidth, real VPN performance, or cellular packet loss.
