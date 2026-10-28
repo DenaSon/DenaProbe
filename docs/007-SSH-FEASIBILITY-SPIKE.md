@@ -61,6 +61,27 @@ The buffer contains only volatile, aggregate metrics. It is cleared after reset 
 
 Four consecutive DNS failures were captured 30 seconds apart after the ESP32 hotspot Wi-Fi went UP. Target name resolution failed quickly (about 10–16 ms); SSH KEXINIT, NEWKEYS and SERVICE_ACCEPT were correctly `NOT_TESTED`. The quality window reported `PATH_FAILURES_OBSERVED` at eligible=4/pass=0, with Wi-Fi RSSI between approximately −50 and −61 dBm. This establishes **DNS-stage failure on this hotspot path**, not download speed reduction, a server outage, censorship, or a hardware defect. The follow-up DNS-control probe was added to distinguish target-specific from broader resolver failure. **Its first local build, upload and hardware validation remain pending.**
 
+## Phase 1B.3 — Independent HTTPS 64 KiB sample (source ready, not yet built or field-tested)
+
+This update adds a **separate, sequential** public HTTPS sample after the SSH session has closed. It does **not** create an SSH channel, authenticate, use NPV Tunnel, or claim to reproduce Telegram downloads.
+
+- Destination: Cloudflare's published speed-test download API `https://speed.cloudflare.com/__down?bytes=65536` (one fixed external service). A successful sample is **not** evidence that Telegram, NPV or the rest of the Internet is fast. A failed sample is not necessarily MCI filtering.
+- HTTPS transport uses `WiFiClientSecure` and an embedded **GTS Root R4** public CA certificate (root trust anchor SHA256 `349DFA4058C5E263123B398AE795573C4E1313C83FE68F93556CD5E8031B3C7D`). Certificate chain and hostname validation remain enabled; **no setInsecure, redirects or HTTP downgrade**. If Cloudflare rotates its issuing CA, a certificate failure may be endpoint/configuration-specific.
+- TLS requires a valid clock; asynchronous SNTP starts when the device boots. If the clock is unsynchronized, result `CLOCK_NOT_READY` is `UNMEASURABLE`, **not** network failure. A resource guard avoids trying TLS without minimum free heap and contiguous block.
+- Sample size capped at **65,536 bytes (64 KiB)**. HTTP body is discarded as it arrives using a bounded stream sink, including HTTP chunked responses; no payload retained. Refuse larger/mismatched bodies. Short per-connection and read timeouts, and a 12-second body-duration cap. Hostname is resolved anew; no request credentials, user data or Core IP used.
+- Scheduled at most every **180 seconds** while Wi-Fi and SSH monitoring continue every **30 seconds**; asynchronous NTP failures can be checked again next cycle. Continuous usage is approximately **30 MiB/day** from payload alone, plus TCP/TLS overhead, so this experiment must be disabled after capture if mobile data is limited (`PROBE_HTTPS_QUALITY_ENABLED=0` in ignored private config). Do not run unattended as a production speed test.
+- Serial output: `[https-quality]` reports `result`, `bytes`, DNS time, HTTP header-completion time including TLS and response, first-body time, body-transfer duration and **approximate** KiB/s for the 64 KiB sample. The latter is **not a full-bandwidth benchmark**, RTT, packet loss, or VPN speed.
+- `[probe-overall]` reports independent SSH and HTTPS states. For successful SSH but failed HTTPS, label `SSH_PASS_PUBLIC_HTTPS_FAILED_OR_INCOMPLETE`. If the sample was not verified, label `SSH_PASS_HTTPS_NOT_MEASURED` or `SSH_PASS_HTTPS_UNMEASURABLE`. If both tests pass: `SSH_AND_PUBLIC_HTTPS_PASS_VPN_UNKNOWN`.
+- Onboard LED now means **both SSH and recent public HTTPS passed** when solid. SSH failure / HTTP failure => warning pattern; SSH success with unmeasured HTTPS => partial pattern. This is only an experimental indication for the tested paths, not an NPV or Telegram health signal. Wi-Fi disconnected => slow blink.
+- Security and reliability caveat: NTP may be blocked even if HTTPS works in other clients; this yields `CLOCK_NOT_READY`. Public Cloudflare speedtest routing may differ from Telegram or SSH relay. The fixed CA root may need maintenance. Only local physical testing can confirm TLS RAM budget on this ESP32.
+
+### Hardware acceptance test (not yet executed)
+
+1. `git pull --ff-only`; `pio run -e esp32dev_ssh_feasibility`; only after a successful build: `pio run -e esp32dev_ssh_feasibility -t upload`; `pio device monitor -b 115200 --filter time`.
+2. Observe `[https-quality]` and `[probe-overall]` during the incident. `PASS` requires an actual verified 65,536-byte HTTPS response. If `CLOCK_NOT_READY`, `LOW_MEMORY`, or TLS errors occur, do **not** conclude filtering.
+3. Compare with an independent browser/NPV Telegram download on the same MCI LTE connection at the same time. A direct HTTPS sample does not test the VPN tunnel or reproduce Telegram's endpoints.
+4. Check watchdog, heap, stable SSH callback results and LED. Physical USB/PlatformIO build & test are outstanding; no merge is authorized.
+
 ## Isolation
 
 - Default `pio run` builds unchanged v0.0.4 from `src/main.cpp`.
@@ -114,6 +135,6 @@ The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 1
 2. **Hardware:** no boot loop, stack overflow, watchdog or growing memory consumption over multiple cycles.
 3. **Security:** wrong pin fails closed; no SSH user authentication or private values in serial output.
 4. **Protocol:** service accepted on known-good path; controlled timeout can be distinguished from KEX/transport failure.
-5. **Next phase:** validate quality telemetry during a real MCI incident, compare with known-good samples, then propose integration with the original DNS/TCP/banner result model **only after explicit approval**.
+5. **Next phase:** field-validate independent HTTPS quality checks during a reported incident; VPN data-path testing remains separate and requires a new, explicitly approved design.
 
-**1B.2 has one successful hardware field log (provided by owner). 1B.3 quality capture is source-only until the owner builds and uploads it.**
+**1B.2 and the SSH quality-capture variant have been built and field-tested by the owner. The additional HTTPS sampling feature has NOT been built, uploaded or field-validated yet.**
