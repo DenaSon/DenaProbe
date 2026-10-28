@@ -145,3 +145,14 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Interpretation:** HTTPS TLS handshake failed **after** SOCKS CONNECT was granted. This is materially distinct from a failure to connect to local port 1080, from failed SSH user authentication, or from proof of blanket SSH transport blocking. The timeout or peer-close mechanism cannot be distinguished from this short log alone.
 - **Alternative explanations to test:** Google-specific TLS endpoint behavior, destination/path route or DNS differences (remote SOCKS resolution may prefer IPv6), intermittent packet loss, SSH forwarding instability, or filtering. No particular cause is established.
 - **Next discriminating control:** On the same Windows/MCI network, execute verbose `curl -4 --noproxy "*" https://google.com/` without SSH/proxy, capturing the stage and outcome; compare with SOCKS and independent example.com successful reference. Preserve exact conditions, timestamps, and repeated attempts.
+
+
+## Observation A-MCI-TLS-11: Direct Google HTTPS succeeds (2026-10-28)
+
+- **Context:** Windows system tunnel/VPN reported disabled and no-proxy public egress previously attributed to MCI/AS197207; direct IPv4 curl request.
+- **Command class:** `curl.exe -v -4 --noproxy "*" --connect-timeout 15 --max-time 40 -o NUL ... https://google.com/`.
+- **DNS:** Local resolver returned IPv4 `216.239.38.120` for `google.com`.
+- **TCP/TLS:** Connected to TCP 443; completed TLS handshake, negotiated ALPN `http/1.1`, displayed a Google Trust Services-issued certificate for Google domain.
+- **HTTP:** `301 Moved Permanently` to `https://www.google.com/`; 220 bytes received. `time_total=0.877814 s`.
+- **Contrast with A-MCI-TLS-10:** Google direct HTTPS succeeded while a separate HTTPS attempt through SSH dynamic SOCKS using `socks5h` failed during TLS negotiation. A working SSH/SOCKS connection to independent `example.com` was also observed. These experiments do **not** prove filtering: endpoint-specific resolution, remote SSH server egress, IPv4/IPv6 selection, and transient conditions differ. Only one directly comparable attempt per path was measured.
+- **Next diagnostic:** Keep the same SSH tunnel active and compare `socks5://127.0.0.1:1080` (local DNS resolution with IPv4) to prior `socks5h://` (server-side DNS resolution). Record remote endpoint selection behavior and exact failure stage.
