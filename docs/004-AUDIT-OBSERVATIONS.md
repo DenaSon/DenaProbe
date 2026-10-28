@@ -98,3 +98,16 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Not yet verified:** That server policy permits a forwarded application connection, any HTTPS data through the SOCKS tunnel on this no-VPN MCI run, UDPGW, or real NPV Tunnel user-experience.
 - **Status:** PASS through SSH user authentication and local SOCKS listener creation; data-path verification **pending**.
 
+
+
+## Observation A-MCI-SOCKS-07: HTTPS request times out after successful SSH authentication
+
+- **Date:** 2026-10-28; exact local timestamp not included in user-provided output.
+- **Context:** Windows system tunnel reportedly off; previous curl public egress belongs to the MCI mobile network. Same OpenSSH tunnel from A-MCI-SSH-06 remains running; Windows route was not separately captured at the exact request timestamp.
+- **SSH status immediately before test:** `Authenticated` via keyboard-interactive; dynamic local SOCKS listener bound to `127.0.0.1:1080`.
+- **Request:** curl HTTPS to Google root through `socks5h://127.0.0.1:1080`, following redirects, `--connect-timeout 10`, `--max-time 25`.
+- **Result:** `curl: (28) Connection timed out after 10015 milliseconds`; `HTTP=000`, `bytes=0`, `time_total=10.015116 s`.
+- **SSH client events during request:** `Connection to port 1080 forwarding to socks port 0 requested`; `channel 1: new dynamic-tcpip`. The provided excerpt does **not** include a downstream `open confirm` for the forwarded SSH channel. This is insufficient to determine whether the hang was remote DNS lookup, the remote server's outbound TCP to the HTTPS destination, an SSH transport stall, an endpoint-specific issue, or a forwarding restriction.
+- **Important contrast:** Earlier curl via SSH SOCKS succeeded from the Windows host **while a separate system-wide tunnel was still enabled**. Different underlay routes prevent attributing this difference to filtering without further controls.
+- **Interpretation:** Successful SSH identification, KEX, password authentication and local SOCKS binding **do not prove** application data transport. This run exhibits a **forwarded HTTPS timeout**, not a proven MCI filtering event and not yet a confirmed NPV Tunnel failure.
+- **Next diagnostic:** Keep SSH running and curl a *different independently reachable HTTPS destination* via the same SOCKS5 proxy with verbose output to identify whether SOCKS negotiation, SSH channel opening, TLS, or HTTP is the last observed stage. Follow with direct-path control from the same Windows interface and multiple repeat attempts.
