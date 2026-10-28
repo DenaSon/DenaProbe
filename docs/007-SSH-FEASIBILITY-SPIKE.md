@@ -1,10 +1,10 @@
-# Phase 1B.1 — SSH feasibility firmware (experimental)
+# Phase 1B — SSH stage and quality capture (experimental)
 
 **Scope:** Build and field-test SSH transport (KEX/NEWKEYS as a combined result), SHA-256 SSH host-key pinning, and a no-credential `ssh-userauth` SERVICE_REQUEST/SERVICE_ACCEPT round-trip on the ESP32 DevKit.
 
 This is **not** the Phase 1B finished diagnostic engine. **No passwords, usernames, SSH user authentication, VPN traffic, bot integration or production changes.**
 
-## Phase 1B.2 — SSH stage visibility (source ready; local build pending)
+## Phase 1B.2 — SSH stage visibility (field-observed on hotspot)
 
 With the same pinned libssh Port, observe per-session connection progress and **incoming** SSH_MSG_NEWKEYS using a non-consuming packet callback. The custom observer returns `SSH_PACKET_NOT_USED` so the official libssh handler continues to validate and process the message. No SSH packets or crypto primitives are modified. This packet hook uses a **private libssh API**, so the Git commit stays pinned; compatibility is not guaranteed for future library upgrades.
 
@@ -20,14 +20,41 @@ Expected structured Serial events (`elapsed_ms` relative to the start of `ssh_co
 
 The stage observer is an **instrumentation experiment**, not an independent validated filtering signature. A timeout after NEWKEYS may still be caused by Wi-Fi, Edge, WireGuard, Core, or transient loss. The `NEWKEYS_RX` observation is intentionally not a `PASS` without successful transport completion.
 
-### Previously observed hardware results (before 1B.2 changes)
+### Hardware observations
 
 - Phase 1B.1 was built and uploaded by the owner on the actual ESP32.
 - Multiple `SERVICE_ACCEPT_PASS` results with a matching trusted Core ED25519 host key.
 - Hotspot off => slow LED; reconnect => steady LED on subsequent SSH success.
 - A deliberately incorrect local pin => `HOST_KEY_MISMATCH` and `service_ms=0` (no service request).
-- These observations do **not** validate 1B.2: its first PlatformIO build, upload, and Serial output are pending.
+- Phase 1B.2 was subsequently built and uploaded: real ESP32 log included `KEXINIT_TX=448ms`, `KEXINIT_RX=643ms`, `NEWKEYS_RX=2045ms`, SSH transport `3282ms`, and `SERVICE_ACCEPT_PASS` with a pinned host-key match. These are successful SSH stage observations, **not evidence of download throughput**.
 
+
+## Phase 1B.3 preview — SSH Quality Capture (NOT hardware validated)
+
+**Purpose:** collect repeatable, low-cost measurements **now** during a reported slowdown without automatically declaring a VPN speed problem.
+
+This experimental firmware uses one no-auth SSH check every **30 seconds** (rather than 60 seconds), retains a **12-result ring buffer** in RAM (about six minutes), and emits:
+
+- `[quality-link]`: Wi-Fi hotspot UP/DOWN transitions with uptime timestamp.
+- `[quality-sample]`: sequence, timestamp since boot, measured hotspot **Wi-Fi RSSI** (never LTE signal), DNS, SSH transport, service-accept durations, and observed KEXINIT / NEWKEYS elapsed-time gaps. The latter are timing intervals, **not** pure crypto execution durations or packet RTTs.
+- `[quality-window]`: number of eligible runs, successes, connectivity failures (Wi-Fi loss, DNS, transport or service failures), separately counted Wi-Fi losses, excluded local security/resource errors, SSH transport p50/p90, span (max-min), and DNS/service p50 calculated **only from successful runs**.
+- `download_speed=UNKNOWN`, `throughput=NOT_TESTED`, `packet_loss=NOT_MEASURED`: avoids claiming any data-transfer measurement. Handshake timing cannot establish bandwidth, real VPN performance, or cellular packet loss.
+
+Status `ssh_latency_flag`:
+
+- `COLLECTING` before four eligible results.
+- `PATH_FAILURES_OBSERVED` if at least two failures fall in the 12-result window. This is **not** an attribution to MCI filtering, Edge, WireGuard, or Core.
+- `BASELINE_NOT_CALIBRATED` if there is no trusted healthy SSH latency reference; importantly, an active incident is **not** a safe time to automatically train a "healthy" baseline.
+- `SLOW_HANDSHAKE_SUSPECT` only if a trusted reference and a decision threshold have **both** been configured, with at least four successful samples and the transport median exceeding that explicit threshold.
+- `NO_SSH_LATENCY_ALERT` when a trusted threshold is present but has not triggered; this does **not** mean download speed is normal.
+
+Optional private (ignored) macros are `PROBE_QUALITY_HEALTHY_TRANSPORT_MS` and `PROBE_QUALITY_ALERT_RATIO_PERCENT`. **Both default to zero: no speculative slowdown classifications.** Configure them only after measuring validated healthy and slow reference samples; do not derive from this capture alone. Neither is a network identifier or a private password, but keep private settings out of Git.
+
+The buffer contains only volatile, aggregate metrics. It is cleared after reset and has no NVLBot integration, persistence, traffic generation, SSH login or remote configuration. The onboard LED still reflects connectivity to SSH service, not the quality flag.
+
+**Capture procedure (PowerShell):** `git pull --ff-only`, then `pio run -e esp32dev_ssh_feasibility`, then `pio run -e esp32dev_ssh_feasibility -t upload`, then `pio device monitor -b 115200`. Run one command at a time. Keep the phone connected to the **MCI LTE hotspot**, do not switch carriers during one window, and record the contemporaneous NPV Tunnel slowdown separately. Capture at least 12 samples / approximately six minutes. Compare with a later known-good window on the same path. Do not label the device's Wi-Fi RSSI as LTE signal.
+
+**Acceptance pending:** successful PlatformIO build and flash; no restart, watchdog or heap trend; 12-sample wrap without corruption; Wi-Fi-off recovery; and comparison against a real healthy/slow reference. Do not merge until approved.
 
 ## Isolation
 
@@ -64,7 +91,7 @@ Run each command separately. Keep v0.0.4 backed up. Never upload firmware before
 
 ## Expected serial labels
 
-- `[ssh-deep] TRANSPORT_PASS`: libssh `ssh_connect` completed KEX and NEWKEYS **combined**. Separate KEXINIT/NEWKEYS timestamps **not supported yet**.
+- `[ssh-deep] TRANSPORT_PASS`: libssh `ssh_connect` completed KEX and NEWKEYS **combined**. 1B.2 also separately reports KEXINIT/NEWKEYS observations (not per-crypto-stage duration).
 - `[ssh-deep] HOST_KEY_PASS`: received server public key matches locally trusted SHA-256 pin.
 - `[ssh-deep] END | result=SERVICE_ACCEPT_PASS`: server accepted SSH userauth service request. **No user login attempted**.
 - `SERVICE_ACCEPT_TIMEOUT`: request awaited but no response before deadline; does not prove filtering.
@@ -74,7 +101,7 @@ Run each command separately. Keep v0.0.4 backed up. Never upload firmware before
 
 Only `SERVICE_ACCEPT_PASS` illuminates the LED steadily (SSH_READY). An incomplete or unconfigured run never claims NPV health. Wi-Fi wait blinks slowly, in-progress/untested is 1.5s ON/0.5s OFF, failed probe is a double pulse.
 
-The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 12-second transport deadline, 8-second service deadline and bounded frequency (60 seconds). Free heap, minimum heap, largest 8-bit block and stack watermark are reported.
+The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 12-second transport deadline, 8-second service deadline and bounded frequency (30 seconds only in incident-capture variant). Free heap, minimum heap, largest 8-bit block and stack watermark are reported.
 
 ## Validation gates
 
@@ -82,6 +109,6 @@ The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 1
 2. **Hardware:** no boot loop, stack overflow, watchdog or growing memory consumption over multiple cycles.
 3. **Security:** wrong pin fails closed; no SSH user authentication or private values in serial output.
 4. **Protocol:** service accepted on known-good path; controlled timeout can be distinguished from KEX/transport failure.
-5. **Next phase:** instrument KEXINIT vs NEWKEYS separately and integrate into the original DNS/TCP/banner result model **only after explicit approval**.
+5. **Next phase:** validate quality telemetry during a real MCI incident, compare with known-good samples, then propose integration with the original DNS/TCP/banner result model **only after explicit approval**.
 
-**1B.2 has not yet been built, flashed or hardware validated. Prior 1B.1 hardware results must not be relabeled as 1B.2 validation.**
+**1B.2 has one successful hardware field log (provided by owner). 1B.3 quality capture is source-only until the owner builds and uploads it.**
