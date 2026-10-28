@@ -151,6 +151,7 @@ uint32_t lastWiFiAttemptMs = 0;
 uint32_t lastProbeMs = 0;
 uint32_t workerStartMs = 0;
 uint32_t probeSequence = 0;
+uint32_t wifiDownTransitions = 0; // Since boot, not limited to the result window.
 bool wifiStatusInitialized = false;
 bool previousWifiConnected = false;
 
@@ -518,7 +519,8 @@ void printQuality(const Result &result) {
 
     Serial.printf(
         "[quality-window] seq=%lu | window=%u/%u | eligible=%u | "
-        "pass=%u | network_failures=%u | wifi_lost=%u | excluded=%u | "
+        "pass=%u | network_failures=%u | wifi_lost=%u | "
+        "wifi_down_events_since_boot=%lu | excluded=%u | "
         "transport_p50_ms=%ld | transport_p90_ms=%ld | "
         "transport_spread_ms=%ld | dns_p50_ms=%ld | service_p50_ms=%ld | "
         "ssh_latency_flag=%s | download_speed=UNKNOWN | "
@@ -530,6 +532,7 @@ void printQuality(const Result &result) {
         static_cast<unsigned int>(passCount),
         static_cast<unsigned int>(networkFailures),
         static_cast<unsigned int>(wifiFailures),
+        static_cast<unsigned long>(wifiDownTransitions),
         static_cast<unsigned int>(excludedCount),
         static_cast<long>(medianTransport),
         static_cast<long>(p90Transport),
@@ -653,6 +656,9 @@ void loop() {
     const uint32_t now = millis();
     const bool wifiConnected = WiFi.status() == WL_CONNECTED;
     if (!wifiStatusInitialized || wifiConnected != previousWifiConnected) {
+        if (wifiStatusInitialized && previousWifiConnected && !wifiConnected) {
+            ++wifiDownTransitions;
+        }
         Serial.printf("[quality-link] boot_ms=%lu | wifi=%s | "
                       "signal=HOTSPOT_WIFI_NOT_LTE\n",
                       static_cast<unsigned long>(now),
