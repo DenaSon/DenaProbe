@@ -1,7 +1,18 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <time.h>
 #include "wifi_config.h"
+
+// Optional HTTPS reporting. Builds and runs safely without a report token.
+#if __has_include("probe_report_private.h")
+#include "probe_report_private.h"
+#define DENAPROBE_REPORTING_ENABLED 1
+#else
+#define DENAPROBE_REPORTING_ENABLED 0
+#endif
 
 // All private infrastructure configuration stays on the local machine.
 #if __has_include("probe_private.h")
@@ -20,7 +31,7 @@
 #define PROBE_LED_ACTIVE_LOW 0
 #endif
 
-// v0.0.4: observational DNS/TCP/SSH-ID + independent public TCP control
+// v0.0.5: observational Edge checks, blue LED and OPTIONAL signed-in HTTPS reporting
 // and status LED. No SSH authentication, Core address, or filtering verdict.
 namespace {
 constexpr uint32_t kReportIntervalMs = 5000;
@@ -33,6 +44,20 @@ constexpr size_t kMaxBannerLength = 160;
 constexpr const char* kPublicControlHost = "example.com";
 constexpr uint16_t kPublicControlPort = 443;
 constexpr uint8_t kPersistentThreshold = 3;
+
+struct ProbeSample {
+    uint32_t uptimeMs = 0;
+    int rssi = -100;
+    int dnsOk = -1;
+    int dnsMs = -1;
+    int tcpOk = -1;
+    int tcpMs = -1;
+    int sshOk = -1;
+    int sshMs = -1;
+    int controlOk = -1;
+    int controlMs = -1;
+    IPAddress edgeIp;
+};
 
 enum class LedMode : uint8_t {
     WIFI_WAIT,  // 1 s ON + 1 s OFF
@@ -135,12 +160,14 @@ void printConnectionDetails() {
 
 // Independent control of DNS resolution and PUBLIC TCP:443 reachability;
 // not HTTPS/TLS or proof that the whole Internet is working.
-bool checkPublicTcpControl() {
+bool checkPublicTcpControl(ProbeSample* sample) {
     IPAddress controlIp;
     const uint32_t dnsStart = millis();
     const bool dnsOk = WiFi.hostByName(kPublicControlHost, controlIp) == 1;
     const uint32_t dnsMs = millis() - dnsStart;
     if (!dnsOk) {
+        sample->controlOk = 0;
+        sample->controlMs = static_cast<int>(dnsMs);
         Serial.printf("[control] FAIL | type=PUBLIC_TCP_443 | stage=DNS | elapsed_ms=%lu\n",
                       static_cast<unsigned long>(dnsMs));
         return false;
@@ -151,6 +178,8 @@ bool checkPublicTcpControl() {
     const bool tcpOk = client.connect(controlIp, kPublicControlPort, kControlTcpTimeoutMs);
     const uint32_t tcpMs = millis() - tcpStart;
     client.stop();
+    sample->controlOk = tcpOk ? 1 : 0;
+    sample->controlMs = static_cast<int>(tcpMs);
     Serial.printf("[control] %s | type=PUBLIC_TCP_443 | dns_ms=%lu | tcp_ms=%lu\n",
                   tcpOk ? "PASS" : "FAIL",
                   static_cast<unsigned long>(dnsMs),
@@ -158,8 +187,10 @@ bool checkPublicTcpControl() {
     return tcpOk;
 }
 
-EdgeResult runEdgeProbe() {
+EdgeResult runEdgeProbe(ProbeSample* sample) {
     const unsigned long startedAt = millis();
+    sample->uptimeMs = static_cast<uint32_t>(startedAt);
+    sample->rssi = WiFi.RSSI();
     Serial.printf("[probe] START | uptime_ms=%lu | RSSI=%d dBm | edge_port=%u\n",
                   startedAt, WiFi.RSSI(), static_cast<unsigned>(PROBE_EDGE_PORT));
 
@@ -168,6 +199,8 @@ EdgeResult runEdgeProbe() {
     const unsigned long dnsStart = millis();
     const bool dnsOk = WiFi.hostByName(PROBE_EDGE_HOST, ip) == 1;
     const unsigned long dnsDuration = millis() - dnsStart;
+    sample->dnsOk = dnsOk ? 1 : 0;
+    sample->dnsMs = static_cast<int>(dnsDuration);
     if (!dnsOk) {
         Serial.printf("[dns] FAIL | elapsed_ms=%lu\n", dnsDuration);
         Serial.println("[probe] END | stage=DNS_FAIL | no_filtering_verdict");
@@ -180,12 +213,15 @@ EdgeResult runEdgeProbe() {
     }
     lastEdgeIP = ip;
     havePreviousEdgeIP = true;
+    sample->edgeIp = ip;
 
     WiFiClient client;
     const unsigned long tcpStart = millis();
     const bool tcpOk = client.connect(
         ip, static_cast<uint16_t>(PROBE_EDGE_PORT), kTcpTimeoutMs);
     const unsigned long tcpDuration = millis() - tcpStart;
+    sample->tcpOk = tcpOk ? 1 : 0;
+    sample->tcpMs = static_cast<int>(tcpDuration);
     if (!tcpOk) {
         Serial.printf("[tcp] FAIL | elapsed_ms=%lu\n", tcpDuration);
         Serial.println("[probe] END | stage=TCP_FAIL | no_filtering_verdict");
@@ -231,6 +267,8 @@ EdgeResult runEdgeProbe() {
     }
 
     const unsigned long bannerDuration = millis() - bannerStart;
+    sample->sshOk = bannerOk ? 1 : 0;
+    sample->sshMs = static_cast<int>(bannerDuration);
     if (bannerOk) {
         Serial.printf("[ssh-id] PASS | elapsed_ms=%lu | protocol=SSH-2.0\n",
                       bannerDuration);
@@ -245,13 +283,145 @@ EdgeResult runEdgeProbe() {
     return bannerOk ? EdgeResult::SSH_ID_PASS : EdgeResult::SSH_ID_FAIL;
 }
 
+
+#if DENAPROBE_REPORTING_ENABLED
+constexpr size_t kReportQueueCapacity = 8;
+String reportQueue[kReportQueueCapacity];
+size_t reportHead = 0;
+size_t reportCount = 0;
+uint32_t reportSequence = 0;
+char reportBootId[9] = {};
+
+String nullableNumber(int value) {
+    return value < 0 ? String("null") : String(value);
+}
+
+const char* nullableBoolean(int value) {
+    return value < 0 ? "null" : (value ? "true" : "false");
+}
+
+void initializeReporting() {
+    snprintf(reportBootId, sizeof(reportBootId), "%08lx",
+             static_cast<unsigned long>(esp_random()));
+    if (strlen(PROBE_REPORT_TOKEN) < 32 ||
+        strlen(PROBE_REPORT_CA_PEM) < 100 ||
+        strcmp(PROBE_REPORT_DEVICE_ID, "probe_01") == 0 &&
+            strcmp(PROBE_REPORT_TOKEN, "REPLACE_WITH_RANDOM_64_HEX_CHARS") == 0) {
+        Serial.println("[telemetry] DISABLED | configure valid token and CA PEM");
+    } else {
+        Serial.println("[telemetry] CONFIGURED | HTTPS strict CA validation; awaiting NTP");
+    }
+}
+
+bool reportingConfigValid() {
+    return strlen(PROBE_REPORT_TOKEN) >= 32 && strlen(PROBE_REPORT_CA_PEM) >= 100
+           && strncmp(PROBE_REPORT_CA_PEM, "\n-----BEGIN CERTIFICATE-----", 28) == 0
+           && strcmp(PROBE_REPORT_TOKEN, "REPLACE_WITH_RANDOM_64_HEX_CHARS") != 0;
+}
+
+void enqueueSample(const ProbeSample& sample) {
+    if (!reportingConfigValid()) return;
+    const uint32_t seq = ++reportSequence;
+    String report;
+    report.reserve(520);
+    report = "{\"schema_version\":1,\"device_id\":\"";
+    report += PROBE_REPORT_DEVICE_ID;
+    report += "\",\"boot_id\":\"";
+    report += reportBootId;
+    report += "\",\"sequence\":";
+    report += String(seq);
+    report += ",\"uptime_ms\":";
+    report += String(sample.uptimeMs);
+    report += ",\"edge_host\":\"";
+    report += PROBE_EDGE_HOST;
+    report += "\",\"edge_ipv4\":";
+    if (sample.dnsOk == 1) {
+        report += "\"";
+        report += sample.edgeIp.toString();
+        report += "\"";
+    } else report += "null";
+    report += ",\"edge_port\":";
+    report += String(PROBE_EDGE_PORT);
+    report += ",\"carrier_declared\":\"";
+    report += PROBE_CARRIER_DECLARED;
+    report += "\",\"wifi_rssi_dbm\":";
+    report += String(sample.rssi);
+    report += ",\"dns_ok\":";
+    report += nullableBoolean(sample.dnsOk);
+    report += ",\"dns_ms\":";
+    report += nullableNumber(sample.dnsMs);
+    report += ",\"tcp_ok\":";
+    report += nullableBoolean(sample.tcpOk);
+    report += ",\"tcp_ms\":";
+    report += nullableNumber(sample.tcpMs);
+    report += ",\"ssh_id_ok\":";
+    report += nullableBoolean(sample.sshOk);
+    report += ",\"ssh_id_ms\":";
+    report += nullableNumber(sample.sshMs);
+    report += ",\"control_ok\":";
+    report += nullableBoolean(sample.controlOk);
+    report += ",\"control_ms\":";
+    report += nullableNumber(sample.controlMs);
+    report += "}";
+
+    if (reportCount >= kReportQueueCapacity) {
+        reportHead = (reportHead + 1) % kReportQueueCapacity;
+        --reportCount;
+        Serial.println("[telemetry] QUEUE_OVERFLOW | oldest report dropped");
+    }
+    const size_t tail = (reportHead + reportCount) % kReportQueueCapacity;
+    reportQueue[tail] = report;
+    ++reportCount;
+}
+
+void flushReports() {
+    if (!reportingConfigValid() || WiFi.status() != WL_CONNECTED || !reportCount) return;
+    if (time(nullptr) < 1700000000) {
+        Serial.println("[telemetry] DEFERRED | clock not synchronized for TLS");
+        return;
+    }
+    const String url = String("https://") + PROBE_REPORT_HOST + PROBE_REPORT_PATH;
+    for (int attempt = 0; attempt < 2 && reportCount; ++attempt) {
+        WiFiClientSecure client;
+        client.setCACert(PROBE_REPORT_CA_PEM); // No setInsecure() fallback.
+        HTTPClient http;
+        http.setTimeout(5000);
+        if (!http.begin(client, url)) {
+            Serial.println("[telemetry] DEFERRED | HTTPS begin failed");
+            return;
+        }
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("X-DenaProbe-Device", PROBE_REPORT_DEVICE_ID);
+        http.addHeader("Authorization", String("Bearer ") + PROBE_REPORT_TOKEN);
+        const int status = http.POST(reportQueue[reportHead]);
+        http.end();
+        if (status != 200) {
+            Serial.printf("[telemetry] DEFERRED | HTTP status=%d | pending=%u\n",
+                          status, static_cast<unsigned>(reportCount));
+            return;
+        }
+        reportQueue[reportHead] = String();
+        reportHead = (reportHead + 1) % kReportQueueCapacity;
+        --reportCount;
+        Serial.printf("[telemetry] SENT | pending=%u\n", static_cast<unsigned>(reportCount));
+    }
+}
+#else
+void initializeReporting() {}
+void enqueueSample(const ProbeSample&) {}
+void flushReports() {}
+#endif
+
 void performProbeAndUpdateStatus() {
-    const EdgeResult result = runEdgeProbe();
+    ProbeSample sample;
+    const EdgeResult result = runEdgeProbe(&sample);
 
     if (result == EdgeResult::SSH_ID_PASS) {
         consecutiveEdgeFailures = 0;
         setLedMode(LedMode::HEALTHY);
         Serial.println("[diagnostic] edge=SSH_ID_PASS | led=HEALTHY | no_filtering_verdict");
+        enqueueSample(sample);
+        flushReports();
         return;
     }
 
@@ -259,7 +429,7 @@ void performProbeAndUpdateStatus() {
 
     // An Edge failure with a passing independent control is a *suspected*
     // Edge-specific reachability problem, never proof of censorship.
-    const bool controlPassed = WiFi.status() == WL_CONNECTED && checkPublicTcpControl();
+    const bool controlPassed = WiFi.status() == WL_CONNECTED && checkPublicTcpControl(&sample);
     if (controlPassed && consecutiveEdgeFailures >= kPersistentThreshold) {
         setLedMode(LedMode::EDGE_ISSUE);
     } else if (WiFi.status() != WL_CONNECTED) {
@@ -272,6 +442,8 @@ void performProbeAndUpdateStatus() {
         "[diagnostic] edge=%s | control=%s | consecutive_failures=%u | led=%s | no_filtering_verdict\n",
         resultName(result), controlPassed ? "PASS" : "FAIL_OR_UNAVAILABLE",
         static_cast<unsigned>(consecutiveEdgeFailures), ledModeName(ledMode));
+    enqueueSample(sample);
+    flushReports();
 }
 } // namespace
 
@@ -279,11 +451,12 @@ void setup() {
     Serial.begin(115200);
     delay(1500);
     Serial.println();
-    Serial.println("=== DenaProbe | Edge + Status LED v0.0.4 ===");
+    Serial.println("=== DenaProbe | Edge + LED + Optional HTTPS v0.0.5 ===");
     Serial.printf("Chip: %s | CPU: %u MHz | Flash: %u bytes\n",
                   ESP.getChipModel(), ESP.getCpuFreqMHz(), ESP.getFlashChipSize());
 
     pinMode(PROBE_LED_PIN, OUTPUT);
+    initializeReporting();
     updateLed(millis());
     Serial.printf("[led] mode=WIFI_WAIT | gpio=%u | active_low=%u\n",
                   static_cast<unsigned>(PROBE_LED_PIN),
@@ -325,6 +498,9 @@ void loop() {
         if (status == WL_CONNECTED) {
             Serial.println("[wifi] CONNECTED");
             printConnectionDetails();
+#if DENAPROBE_REPORTING_ENABLED
+            configTime(0, 0, "pool.ntp.org", "time.google.com");
+#endif
             consecutiveEdgeFailures = 0;
             setLedMode(LedMode::SUSPECT);  // Do not claim healthy before first test.
             probeDue = true;
