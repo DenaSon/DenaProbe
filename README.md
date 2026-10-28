@@ -4,14 +4,14 @@
 
 DenaProbe is a small hardware research project for comparing healthy and disrupted network connectivity. The first experiment focuses on **MCI (Hamrah-e Aval) mobile internet**, accessed through a **2.4 GHz Wi-Fi hotspot** by an ESP32 DevKit.
 
-> Current status: ESP32 Wi-Fi link validated; **v0.0.3 adds minimal DNS/TCP/SSH identification observations**, pending build/flash verification on hardware. This is not a filtering classifier, VPN client, or production monitor.
+> Current status: **v0.0.3 validated on a physical ESP32** (six consecutive DNS/TCP/SSH-ID passes over ~5 minutes). **v0.0.4 implements a status LED and fallback independent TCP control, awaiting local build/flash/hardware verification.** No filtering classifier, VPN client, or production monitor exists.
 
 ## Phase boundaries
 
 - **Phase 0 (passed):** Verify USB flashing and serial output on the ESP32.
 - **Phase 1 / Step 0 (current):** Validate ESP32 Wi-Fi association with an MCI LTE phone hotspot.
 - **Phase 1A:** Audit real healthy vs. failed connections using independent controls and a reference client.
-- **Phase 1B (v0.0.3 candidate):** Implement only DNS, TCP, and unauthenticated SSH identification probes via ESP32 Wi-Fi. Build/flash and healthy-vs-failed validation pending.
+- **Phase 1B:** v0.0.3 hardware validated for DNS, TCP, and unauthenticated SSH identification. v0.0.4 adds LED indication and an independent public TCP control on Edge probe failures; validation pending.
 - **Later:** Evaluate SIM800L 2G/GPRS independently. It is **not** part of Phase 1.
 
 A successful DNS lookup, TCP connection, or SSH identification exchange **does not prove** that SSH authentication or a VPN tunnel works. A failed connection **does not by itself prove filtering**.
@@ -51,7 +51,7 @@ Never commit **other** Wi-Fi passwords, SSH credentials, device identifiers (IME
 
 No license has been selected yet. A public repository is not automatically an open-source software license.
 
-## Phase 1B: Minimal Edge probes (v0.0.3, awaiting hardware verification)
+## Phase 1B: Minimal Edge probes (v0.0.3 validated on hardware)
 
 This firmware preserves the Wi-Fi status checks and adds a **once-per-60-second** diagnostic sequence on the *public Edge* configured in the NPV Tunnel profile: DNS A lookup, TCP connect to the Edge SSH port, and passive SSH `SSH-2.0-` identification-line read (4-second timeout). It does **not** log in, send an SSH password, run KEX, test the Core egress, authenticate NPV, or diagnose censorship.
 
@@ -71,4 +71,32 @@ Edit `PROBE_EDGE_HOST` to the publicly accessible hostname configured in the cli
 
 Expected tags: `[dns] PASS|FAIL`, `[tcp] PASS|FAIL`, `[ssh-id] PASS|FAIL`, `[probe] END | stage=... | no_filtering_verdict`. Wi-Fi reconnect, negative controls, and uncertainty matter; a PASS **never** means VPN app traffic is known working, and a FAIL **never** proves intentional filtering. The SSH identification line is **not authenticated** and cannot substitute for the reference NPV Tunnel application outcome.
 
-**Verification status:** Code has been authored in the repository but **has not yet been built, uploaded, or tested against an ESP32 in this environment**. Record firmware results only after hardware execution.
+**Verification status:** The owner built and flashed v0.0.3 and provided six successful serial probe cycles from physical hardware. See `docs/004-AUDIT-OBSERVATIONS.md`. This positive baseline does not test failure recognition.
+
+## v0.0.4 — Edge rotation awareness, independent control, status LED (unverified)
+
+**DNS, not IP pinning:** The private setting `PROBE_EDGE_HOST` holds the public **Edge hostname**, not the IP address or hidden Core. On every ~60-second test, `WiFi.hostByName()` requests its current IPv4 mapping and the probe connects to that result. When DNS returns a different IP than on the last successful cycle, serial prints `[dns] EDGE_IP_CHANGED`. **DNS caching and TTL propagation can delay a rotation**; this does not bypass caching or resolve all A records.
+
+**LED (default: GPIO2, active-HIGH):** Many ESP32 DevKit boards expose an onboard blue LED on GPIO2, but not all. If your board lacks a controllable LED on GPIO2 or uses inverted polarity, set `PROBE_LED_PIN` and `PROBE_LED_ACTIVE_LOW` in **local ignored** `include/probe_private.h`. Do not overwrite this file with the template if already configured. LED updates are best-effort while network operations can block for several seconds.
+
+| LED state | Pattern | Meaning |
+|---|---|---|
+| `WIFI_WAIT` | 1 second ON, 1 second OFF | Wi-Fi not yet connected, or disconnected |
+| `HEALTHY` | solid ON | Last DNS, TCP/2252, and SSH identification probe passed; **NOT** NPV health |
+| `SUSPECT` | double short flash, 2-second repetition | First/second Edge probe failure; or repeated failure without working public control |
+| `EDGE_ISSUE` | fast blink (125 ms ON, 125 ms OFF) | **3+ consecutive Edge probe failures AND an independent public TCP control passed**; suspected Edge-specific fault, NOT proven filtering |
+
+**Independent control:** On each failure of Edge DNS/TCP/SSH-ID, v0.0.4 resolves `example.com` and attempts a TCP socket to public port 443 with a 3-second TCP timeout. Passing this proves only this distinct public TCP connection, **not HTTPS/TLS or whole-internet health**. A failed control leaves the alert in `SUSPECT`, without concluding that mobile Internet is completely down. This fallback control itself may be subject to access restrictions or server faults. The board runs no SSH authentication, does not use the Core address and does not measure NPV application traffic.
+
+**Local upgrade (PowerShell in your existing clone):**
+```powershell
+Set-Location "D:\denaProbe\DenaProbe"
+git pull --ff-only
+pio run
+pio run -t upload
+pio device monitor -b 115200
+```
+
+Leave `include/probe_private.h` in place. Firmware defaults to GPIO2 when optional LED definitions are absent. Expected new lines: `[led] mode=...`, `[diagnostic] ... | no_filtering_verdict`, and on failed Edge probes `[control] PASS|FAIL | type=PUBLIC_TCP_443 ...`.
+
+**Verification:** v0.0.4 was committed but **has not yet been built, flashed or visually verified on the user's board**. Do not describe LED patterns or independent-control classification as tested until the owner reports hardware evidence. Never turn a single probe failure into a filtering conclusion.
