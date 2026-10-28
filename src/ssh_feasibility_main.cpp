@@ -371,6 +371,9 @@ void printResult(const Result &result) {
     Serial.printf("[ssh-stage] KEXINIT_RX | state=%s | elapsed_ms=%ld\n",
                   stage.kexInitRxMs >= 0 ? "OBSERVED" : "NOT_OBSERVED",
                   static_cast<long>(stage.kexInitRxMs));
+    Serial.printf("[ssh-stage] KEXINIT | outcome=%s\n",
+                  stage.algorithmsMs >= 0 ? "PASS" :
+                  stage.kexInitRxMs >= 0 ? "UNKNOWN" : "NOT_TESTED");
     Serial.printf("[ssh-stage] KEX_ALGORITHMS | state=%s | elapsed_ms=%ld\n",
                   stage.algorithmsMs >= 0 ? "NEGOTIATED" : "NOT_OBSERVED",
                   static_cast<long>(stage.algorithmsMs));
@@ -383,9 +386,15 @@ void printResult(const Result &result) {
     Serial.printf("[ssh-stage] NEWKEYS | outcome=%s | processing_duration_ms=NOT_MEASURED\n",
                   stage.transportVerified ? "PASS" :
                   stage.newkeysRxMs >= 0 ? "UNKNOWN" : "NOT_TESTED");
-    Serial.printf("[ssh-stage] SERVICE_ACCEPT | outcome=%s | elapsed_ms=%lu\n",
-                  serviceOutcome(result.code),
-                  static_cast<unsigned long>(result.serviceMs));
+    if (result.code == Code::PASS ||
+        result.code == Code::SERVICE_ACCEPT_TIMEOUT ||
+        result.code == Code::SERVICE_REQUEST_ERROR) {
+        Serial.printf("[ssh-stage] SERVICE_ACCEPT | outcome=%s | elapsed_ms=%lu\n",
+                      serviceOutcome(result.code),
+                      static_cast<unsigned long>(result.serviceMs));
+    } else {
+        Serial.println("[ssh-stage] SERVICE_ACCEPT | outcome=NOT_TESTED | elapsed_ms=NOT_TESTED");
+    }
     Serial.printf("[ssh-deep] stop_stage=%s | no_filtering_verdict\n",
                   stopStage(result));
     Serial.printf(
@@ -415,7 +424,7 @@ void setup() {
     delay(1500);
     pinMode(kLedPin, OUTPUT);
     updateLed();
-    Serial.println("=== DenaProbe | Phase 1B.1 SSH Feasibility (not production) ===");
+    Serial.println("=== DenaProbe | Phase 1B.2 SSH Stage Instrumentation (experimental) ===");
     Serial.println("[scope] SSH transport + pinned host key + service accept; no auth");
 
     uint8_t pin[32] = {};
