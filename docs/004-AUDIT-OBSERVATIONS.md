@@ -249,3 +249,13 @@ Independent public BGP and IP registration lookups describe the **144.172.68.0/2
 - **Old vs new:** Previously verified no-system-VPN egress was attributed to MCI (AS197207). Because the relay was changed and the new egress appears to be from RighTel, prior failed MCI measurements and the present healthy request are **not a controlled like-for-like comparison**.
 - **Next action:** Identify which SIM/mobile provider supplies the actual Windows hotspot/tether interface and whether the Windows system VPN or other tunnel is really disabled. Only then classify this as an MCI or RighTel healthy baseline and proceed with SSH/NPV controls.
 - **Sanitization:** No exact client egress IP, hotspot details, credentials, or machine identity stored in this public note.
+
+
+## Observation A-MCI-POST-RELAY-21: MCI-attributed direct egress restored for new healthy series (2026-10-28)
+
+- **Context:** Following a user-reported relay switch and recovery of the affected VPN users, the Windows client briefly showed RighTel-attributed egress (A-POST-RELAY-EGRESS-20). The user now reports returning to Hamrah-e Aval (MCI) and provided an updated direct egress check.
+- **Control:** Windows PowerShell 7.6.7 curl `-4 -sS --noproxy "*" --connect-timeout 10 --max-time 20` to `https://api.ipify.org`, returning HTTP **200** in **0.761895 s** and the **same IPv4 egress previously independently checked as MCI/AS197207**.
+- **Evidence:** Positive direct HTTPS reachability, with egress address match to earlier MCI reference. HTTP-proxy bypass alone does not prove all OS-level tunnels or physical adapters are absent; the operator attribution rests on the prior identification and user's report of the current mobile uplink.
+- **Classification:** **MCI-attributed post-relay healthy baseline candidate, Round 1 / egress checkpoint**. This is not yet confirmation that SSH transport, SOCKS forwarding, NPV Tunnel or UDPGW is working from the test computer. Operational restoration is user-reported and may involve a different relay/route from the Windows reference server.
+- **Next diagnostic:** `Test-NetConnection n1.nvlsup.com -Port 2252 -InformationLevel Detailed` to verify DNS, Windows-selected interface/source route, and basic TCP reachability of the same historical reference SSH endpoint. Do not assume this is the newly changed relay without separate verification.
+- **Privacy:** Exact client public IP excluded from public repository notes; no secret or full raw log included.
