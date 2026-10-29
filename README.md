@@ -40,6 +40,8 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 - [Project scope](docs/001-PROJECT-SCOPE.md)
 - [Comparative audit methodology](docs/002-AUDIT-METHODOLOGY.md)
 - [Healthy MCI baseline runbook](docs/003-HEALTHY-BASELINE-RUNBOOK.md)
+- [SSH feasibility and hardware field observations](docs/007-SSH-FEASIBILITY-SPIKE.md)
+- **[DPT/1 cross-platform telemetry contract](docs/008-DPT-TELEMETRY-CONTRACT-V1.md)** ([codes](contracts/dpt/v1/code-registry.json) · [JSON Schema](contracts/dpt/v1/telemetry.schema.json) · [fixtures](contracts/dpt/v1/fixtures.json)) — documentation only; firmware/NVLBot integration pending.
 
 ## Public repository safety
 
