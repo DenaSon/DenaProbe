@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <type_traits>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "ProbeTypes.h"
@@ -16,6 +17,9 @@ struct ProbeEvent {
     Result ssh{};
     HttpsQuality::Result https{};
 };
+
+static_assert(std::is_trivially_copyable<ProbeEvent>::value,
+              "FreeRTOS queues copy event bytes; ProbeEvent must remain trivially copyable");
 
 class ProbeEventQueue {
 public:
