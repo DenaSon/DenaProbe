@@ -119,6 +119,10 @@ Precedence: Wi-Fi down → current SSH failure → SSH unavailable/stale → slo
 - Once the relay path recovered, sequences 44–49 reported repeated `SERVICE_ACCEPT_PASS` while the 12-sample window still contained earlier network failures. Using the historical window to drive the present LED would have been misleading.
 - 64 KiB Cloudflare samples during testing on MCI and RighTel took roughly 4–6 seconds of body transfer. This is a **limited endpoint-specific measurement**, not the speed of the NPV tunnel or evidence of throttling by either operator.
 
+### 1B.4 PlatformIO build fix — 2026-10-29
+
+The first local build of the 1B.4 status/LED patch **failed** with compiler errors beginning at `PublicHttpsState::DISABLED`. Arduino-ESP32's `esp32-hal-gpio.h` defines `DISABLED` as a preprocessor macro (`0x00`), which corrupts the `enum class PublicHttpsState` declaration. Subsequent compiler errors saying that `PASS`, `SLOW_SUSPECT`, etc. are not members, and `expected declaration before '}'`, are consistent with this parser failure and are not independent evidence of extra braces. Commit `0f59beb` renames only the **C++ enum member** to `CHECK_DISABLED`, leaving the serial status string `"DISABLED"` and behavior unchanged. Static checks found matching braces and resolved all `PublicHttpsState` references. **The actual PlatformIO build still needs to be rerun locally; do not upload until it succeeds.**
+
 ### 1B.4 acceptance criteria (pending)
 
 1. On the owner's ESP32, run `pio run -e esp32dev_ssh_feasibility`; upload **only after a successful build**, then monitor COM6 at 115200 baud.
