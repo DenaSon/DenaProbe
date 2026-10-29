@@ -114,7 +114,7 @@ void consumeEvent(const ProbeEvent &event) {
 
     // The independent SSH result can change the LED before HTTPS completes.
     refreshLedState(millis());
-    printOverall(probeState, quality.probeSequence,
+    printOverall(probeState,
                  event.kind == ProbeEventKind::HTTPS_RESULT,
                  WiFi.status() == WL_CONNECTED);
     if (event.workerFinished) workerRunning = false;
