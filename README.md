@@ -4,14 +4,15 @@
 
 DenaProbe is a small hardware research project for comparing healthy and disrupted network connectivity. The first experiment focuses on **MCI (Hamrah-e Aval) mobile internet**, accessed through a **2.4 GHz Wi-Fi hotspot** by an ESP32 DevKit.
 
-> Current status: **v0.0.3 validated on a physical ESP32** (six consecutive DNS/TCP/SSH-ID passes over ~5 minutes). **v0.0.4 implements a status LED and fallback independent TCP control, awaiting local build/flash/hardware verification.** No filtering classifier, VPN client, or production monitor exists.
+> **Current experimental branch status (2026-10-29):** Phase 1B.4 SSH feasibility firmware was successfully built, flashed and observed on an ESP32; one 12/12 SSH PASS window and independent 64 KiB HTTPS PASS samples were captured. Controlled failure-pattern validation is still pending. **DPT/1 is a documented, not yet implemented telemetry contract.** No NVLBot ingest, VPN/NPV authentication, filtering classifier or production alert service exists. Older v0.0.x sections below are historical and describe their own testing state.
 
 ## Phase boundaries
 
 - **Phase 0 (passed):** Verify USB flashing and serial output on the ESP32.
-- **Phase 1 / Step 0 (current):** Validate ESP32 Wi-Fi association with an MCI LTE phone hotspot.
+- **Phase 1 / Step 0 (completed):** Validate ESP32 Wi-Fi association with an MCI LTE phone hotspot.
 - **Phase 1A:** Audit real healthy vs. failed connections using independent controls and a reference client.
-- **Phase 1B:** v0.0.3 hardware validated for DNS, TCP, and unauthenticated SSH identification. v0.0.4 adds LED indication and an independent public TCP control on Edge probe failures; validation pending.
+- **Phase 1B (experimental):** v0.0.x baseline probes preceded the isolated 1B.4 no-credential SSH transport/pinned-host-key/SERVICE_ACCEPT and separate 64 KiB HTTPS checks. Successful-path hardware testing exists; full fault-path validation is pending.
+- **Phase 2 (planned, not implemented):** DPT/1 device telemetry to NVLBot, signed ingestion, history; alerts are a separate later phase.
 - **Later:** Evaluate SIM800L 2G/GPRS independently. It is **not** part of Phase 1.
 
 A successful DNS lookup, TCP connection, or SSH identification exchange **does not prove** that SSH authentication or a VPN tunnel works. A failed connection **does not by itself prove filtering**.
