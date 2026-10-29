@@ -5,6 +5,7 @@
 
 namespace DenaProbe {
 const char *codeName(Code code); // Implemented in ProbeDiagnostics.h.
+int32_t elapsedDifference(int32_t endMs, int32_t startMs); // Signed stage delta or NOT_MEASURED.
 bool eligibleForAvailability(Code code) {
     switch (code) {
         case Code::PASS:
