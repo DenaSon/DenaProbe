@@ -4,6 +4,7 @@
 #include "ProbeConfig.h"
 
 namespace DenaProbe {
+const char *codeName(Code code); // Implemented in ProbeDiagnostics.h.
 bool eligibleForAvailability(Code code) {
     switch (code) {
         case Code::PASS:
@@ -52,10 +53,6 @@ struct QualitySample {
     uint32_t serviceMs;
     int16_t wifiRssiDbm;
 };
-QualitySample qualityHistory[kQualityWindowSamples]{};
-uint8_t qualityCount = 0;
-uint8_t qualityWriteIndex = 0;
-
     QualitySample qualityHistory[kQualityWindowSamples]{};
     uint8_t qualityCount = 0;
     uint8_t qualityWriteIndex = 0;
