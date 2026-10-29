@@ -399,7 +399,7 @@ void refreshLedState(uint32_t now) {
     if (next != ledMode) {
         ledMode = next;
         Serial.printf("[led-state] mode=%s | vpn_path=NOT_TESTED | "
-                      "meaning=TESTED_PATHS_ONLY\\n", ledName(ledMode));
+                      "meaning=TESTED_PATHS_ONLY\n", ledName(ledMode));
     }
 }
 
@@ -791,7 +791,7 @@ void printOverall(const Result &result) {
         "[probe-overall] ssh=%s | ssh_path=%s | https=%s | "
         "public_https=%s | https_new_sample=%u | https_sample_seq=%lu | "
         "https_sample_age_ms=%ld | https_fresh=%u | status=%s | led=%s | "
-        "vpn=NOT_TESTED | filtering_verdict=INCONCLUSIVE\\n",
+        "vpn=NOT_TESTED | filtering_verdict=INCONCLUSIVE\n",
         codeName(result.code), sshPathName(state.ssh),
         httpsFresh ? HttpsQuality::statusName(lastHttpsStatus) : "NOT_TESTED",
         publicHttpsName(state.https),
