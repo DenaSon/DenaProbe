@@ -1,4 +1,4 @@
-// Phase 1B.3-prep: isolated no-credential SSH stage and quality telemetry firmware.
+// Phase 1B.4: isolated no-credential SSH/HTTPS telemetry with independent LED states.
 // The default esp32dev environment builds src/main.cpp (v0.0.4) unchanged.
 // This firmware never authenticates as a user or tests NPV application traffic.
 #include <Arduino.h>
@@ -47,6 +47,10 @@ constexpr uint32_t kRetryWiFiMs = 20000;
 constexpr uint32_t kProbeIntervalMs = 30000;
 constexpr uint8_t kQualityWindowSamples = 12;
 constexpr uint32_t kHttpsIntervalMs = 180000U; // 64 KiB every 3min ≈ 30MiB/day.
+// The current SSH status becomes UNKNOWN if no successful worker completion is
+// observed for three regular probe intervals; old window failures are historical.
+constexpr uint32_t kSshFreshnessMs = 3U * kProbeIntervalMs;
+constexpr uint32_t kHttpsFreshnessMs = 2U * kHttpsIntervalMs;
 constexpr uint32_t kConnectDeadlineMs = 12000;
 constexpr uint32_t kServiceDeadlineMs = 8000;
 constexpr uint32_t kTaskStalledMs = 55000; // Sequential SSH + HTTPS task.
@@ -54,7 +58,17 @@ constexpr uint32_t kWorkerStackBytes = 51200;
 constexpr uint32_t kRequiredHeapBeforeTask = 110000;
 constexpr uint8_t kLedPin = 2;  // ESP32 DEVKITV1 onboard blue LED, active HIGH
 
-enum class LedMode : uint8_t { WIFI_WAIT, PARTIAL, SSH_READY, SUSPECT };
+// A single blue LED cannot communicate VPN health (VPN never authenticated).
+// Distinct patterns report Wi-Fi, SSH path, and independent public HTTPS only.
+enum class LedMode : uint8_t {
+    WIFI_DOWN, UNKNOWN, SSH_READY, HTTPS_SLOW, HTTPS_FAILURE, SSH_FAILURE
+};
+enum class SshPathState : uint8_t {
+    NOT_TESTED, PASS, FAILURE, LOCAL_UNMEASURABLE, STALE
+};
+enum class PublicHttpsState : uint8_t {
+    DISABLED, NOT_TESTED, PASS, SLOW_SUSPECT, ENDPOINT_FAILURE, UNMEASURABLE, STALE
+};
 enum class Code : uint8_t {
     PASS, WIFI_LOST, DNS_FAIL, SESSION_ALLOC_FAILED, SSH_OPTIONS_FAILED,
     SSH_CONNECT_TIMEOUT, SSH_CONNECT_ERROR, HOST_KEY_ERROR, HOST_KEY_MISMATCH,
@@ -167,6 +181,12 @@ uint32_t lastHttpsScheduleMs = 0;
 bool httpsLastMeasured = false;
 HttpsQuality::Status lastHttpsStatus = HttpsQuality::Status::NOT_TESTED;
 uint32_t lastHttpsResultAtMs = 0;
+uint32_t lastHttpsSampleSeq = 0;
+// Track current evidence separately from the rolling 12-probe history.
+bool sshLastMeasured = false;
+Code lastSshCode = Code::SSH_CONNECT_ERROR;
+uint32_t lastSshResultAtMs = 0;
+bool localProbeError = false;
 uint32_t wifiDownTransitions = 0; // Since boot, not limited to the result window.
 bool wifiStatusInitialized = false;
 bool previousWifiConnected = false;
@@ -182,7 +202,7 @@ QualitySample qualityHistory[kQualityWindowSamples]{};
 uint8_t qualityCount = 0;
 uint8_t qualityWriteIndex = 0;
 
-LedMode ledMode = LedMode::WIFI_WAIT;
+LedMode ledMode = LedMode::WIFI_DOWN;
 int lastLedLevel = -1;
 
 const char *codeName(Code code) {
@@ -223,14 +243,147 @@ bool readTrustedPin(uint8_t expected[32]) {
     return true;
 }
 
+const char *ledName(LedMode mode) {
+    switch (mode) {
+        case LedMode::WIFI_DOWN: return "WIFI_DOWN";
+        case LedMode::UNKNOWN: return "UNKNOWN";
+        case LedMode::SSH_READY: return "SSH_READY";
+        case LedMode::HTTPS_SLOW: return "PUBLIC_HTTPS_SLOW";
+        case LedMode::HTTPS_FAILURE: return "PUBLIC_HTTPS_FAILURE";
+        case LedMode::SSH_FAILURE: return "SSH_FAILURE";
+    }
+    return "UNKNOWN";
+}
+
+const char *sshPathName(SshPathState state) {
+    switch (state) {
+        case SshPathState::NOT_TESTED: return "NOT_TESTED";
+        case SshPathState::PASS: return "SERVICE_ACCEPT_PASS";
+        case SshPathState::FAILURE: return "PATH_FAILURE";
+        case SshPathState::LOCAL_UNMEASURABLE: return "LOCAL_UNMEASURABLE";
+        case SshPathState::STALE: return "STALE";
+    }
+    return "UNKNOWN";
+}
+
+const char *publicHttpsName(PublicHttpsState state) {
+    switch (state) {
+        case PublicHttpsState::DISABLED: return "DISABLED";
+        case PublicHttpsState::NOT_TESTED: return "NOT_TESTED";
+        case PublicHttpsState::PASS: return "PASS";
+        case PublicHttpsState::SLOW_SUSPECT: return "SLOW_SAMPLE_SUSPECT";
+        case PublicHttpsState::ENDPOINT_FAILURE: return "ENDPOINT_FAILURE";
+        case PublicHttpsState::UNMEASURABLE: return "UNMEASURABLE";
+        case PublicHttpsState::STALE: return "STALE";
+    }
+    return "UNKNOWN";
+}
+
+struct CurrentState {
+    SshPathState ssh;
+    PublicHttpsState https;
+    LedMode led;
+};
+
+// Source-specific probes remain independent. Old rolling-window failures never
+// override the latest verified SSH result; the window remains diagnostic only.
+CurrentState currentState(uint32_t now) {
+    CurrentState state{
+        SshPathState::NOT_TESTED, PublicHttpsState::NOT_TESTED, LedMode::UNKNOWN
+    };
+    if (!PROBE_HTTPS_QUALITY_ENABLED) {
+        state.https = PublicHttpsState::DISABLED;
+    } else if (!httpsLastMeasured) {
+        state.https = PublicHttpsState::NOT_TESTED;
+    } else if (now - lastHttpsResultAtMs >= kHttpsFreshnessMs) {
+        state.https = PublicHttpsState::STALE;
+    } else {
+        switch (lastHttpsStatus) {
+            case HttpsQuality::Status::PASS:
+                state.https = PublicHttpsState::PASS;
+                break;
+            case HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT:
+                state.https = PublicHttpsState::SLOW_SUSPECT;
+                break;
+            case HttpsQuality::Status::CLOCK_NOT_READY:
+            case HttpsQuality::Status::LOW_MEMORY:
+            case HttpsQuality::Status::WIFI_DOWN:
+            case HttpsQuality::Status::NOT_TESTED:
+                state.https = PublicHttpsState::UNMEASURABLE;
+                break;
+            default:
+                // DNS, TLS, HTTP and short-body errors are limited to the
+                // tested endpoint, not proof of global internet or filtering.
+                state.https = PublicHttpsState::ENDPOINT_FAILURE;
+                break;
+        }
+    }
+
+    if (!validConfig || stalled || localProbeError) {
+        state.ssh = SshPathState::LOCAL_UNMEASURABLE;
+    } else if (!sshLastMeasured) {
+        state.ssh = SshPathState::NOT_TESTED;
+    } else if (now - lastSshResultAtMs >= kSshFreshnessMs) {
+        state.ssh = SshPathState::STALE;
+    } else {
+        switch (lastSshCode) {
+            case Code::PASS:
+                state.ssh = SshPathState::PASS;
+                break;
+            case Code::SESSION_ALLOC_FAILED:
+            case Code::SSH_OPTIONS_FAILED:
+            case Code::WIFI_LOST:
+                state.ssh = SshPathState::LOCAL_UNMEASURABLE;
+                break;
+            default:
+                // Includes DNS/transport/service failures and host-key errors.
+                // Raw result indicates precise stage/reason; no censor verdict.
+                state.ssh = SshPathState::FAILURE;
+                break;
+        }
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        state.led = LedMode::WIFI_DOWN;
+    } else if (state.ssh == SshPathState::FAILURE) {
+        state.led = LedMode::SSH_FAILURE;
+    } else if (state.ssh != SshPathState::PASS) {
+        state.led = LedMode::UNKNOWN;
+    } else if (state.https == PublicHttpsState::SLOW_SUSPECT) {
+        state.led = LedMode::HTTPS_SLOW;
+    } else if (state.https == PublicHttpsState::ENDPOINT_FAILURE) {
+        state.led = LedMode::HTTPS_FAILURE;
+    } else if (state.https == PublicHttpsState::PASS ||
+               state.https == PublicHttpsState::DISABLED) {
+        state.led = LedMode::SSH_READY;
+    } else {
+        state.led = LedMode::UNKNOWN;
+    }
+    return state;
+}
+
 void updateLed() {
     const uint32_t phase = millis() % 2000U;
     bool on = false;
     switch (ledMode) {
-        case LedMode::WIFI_WAIT: on = phase < 1000U; break;
-        case LedMode::PARTIAL: on = phase < 1500U; break;
-        case LedMode::SSH_READY: on = true; break;
-        case LedMode::SUSPECT:
+        case LedMode::WIFI_DOWN:     // 1s on, 1s off
+            on = phase < 1000U;
+            break;
+        case LedMode::UNKNOWN:       // 0.5s on, 1.5s off
+            on = phase < 500U;
+            break;
+        case LedMode::SSH_READY:     // Solid = tested SSH reachable; NOT VPN
+            on = true;
+            break;
+        case LedMode::HTTPS_SLOW:    // 1.5s on, 0.5s off: warning only
+            on = phase < 1500U;
+            break;
+        case LedMode::HTTPS_FAILURE: // Triple short flashes
+            on = phase < 120U ||
+                 (phase >= 300U && phase < 420U) ||
+                 (phase >= 600U && phase < 720U);
+            break;
+        case LedMode::SSH_FAILURE:   // Two short flashes
             on = phase < 120U || (phase >= 320U && phase < 440U);
             break;
     }
@@ -238,6 +391,15 @@ void updateLed() {
     if (level != lastLedLevel) {
         digitalWrite(kLedPin, level);
         lastLedLevel = level;
+    }
+}
+
+void refreshLedState(uint32_t now) {
+    const LedMode next = currentState(now).led;
+    if (next != ledMode) {
+        ledMode = next;
+        Serial.printf("[led-state] mode=%s | vpn_path=NOT_TESTED | "
+                      "meaning=TESTED_PATHS_ONLY\\n", ledName(ledMode));
     }
 }
 
@@ -606,26 +768,38 @@ void printHttpsResult(const Result &result) {
         h.httpCode, h.httpStreamResult);
 }
 void printOverall(const Result &result) {
-    const bool httpsFresh = httpsLastMeasured &&
-        millis() - lastHttpsResultAtMs < 2U * kHttpsIntervalMs;
+    const uint32_t now = millis();
+    const CurrentState state = currentState(now);
+    const uint32_t ageMs = httpsLastMeasured ? now - lastHttpsResultAtMs : 0;
+    const bool httpsFresh = httpsLastMeasured && ageMs < kHttpsFreshnessMs;
+
+    // Preserve the existing tagged output, but add independent machine-readable
+    // states, observation age and provenance (new vs cached HTTPS sample).
     const char *overall =
         WiFi.status() != WL_CONNECTED ? "WIFI_DOWN" :
-        result.code != Code::PASS ? "SSH_NOT_READY" :
-        !PROBE_HTTPS_QUALITY_ENABLED ? "SSH_PASS_HTTPS_DISABLED" :
-        !httpsFresh ? "SSH_PASS_HTTPS_NOT_MEASURED" :
-        lastHttpsStatus == HttpsQuality::Status::PASS
-            ? "SSH_AND_PUBLIC_HTTPS_PASS_VPN_UNKNOWN" :
-        lastHttpsStatus == HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT
+        state.ssh == SshPathState::FAILURE ? "SSH_NOT_READY" :
+        state.ssh != SshPathState::PASS ? "SSH_UNMEASURABLE_OR_STALE" :
+        state.https == PublicHttpsState::DISABLED ? "SSH_PASS_HTTPS_DISABLED" :
+        state.https == PublicHttpsState::PASS
+            ? "SSH_PASS_PUBLIC_HTTPS_PASS_VPN_UNKNOWN" :
+        state.https == PublicHttpsState::SLOW_SUSPECT
             ? "SSH_PASS_PUBLIC_HTTPS_SLOW_SUSPECT" :
-        (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY ||
-         lastHttpsStatus == HttpsQuality::Status::LOW_MEMORY)
-            ? "SSH_PASS_HTTPS_UNMEASURABLE" :
-              "SSH_PASS_PUBLIC_HTTPS_FAILED_OR_INCOMPLETE";
-    Serial.printf("[probe-overall] ssh=%s | https=%s | status=%s | "
-                  "vpn=NOT_TESTED | filtering_verdict=INCONCLUSIVE\n",
-                  codeName(result.code),
-                  httpsFresh ? HttpsQuality::statusName(lastHttpsStatus) : "NOT_TESTED",
-                  overall);
+        state.https == PublicHttpsState::ENDPOINT_FAILURE
+            ? "SSH_PASS_PUBLIC_HTTPS_ENDPOINT_FAILURE" :
+              "SSH_PASS_HTTPS_UNMEASURABLE_OR_STALE";
+    Serial.printf(
+        "[probe-overall] ssh=%s | ssh_path=%s | https=%s | "
+        "public_https=%s | https_new_sample=%u | https_sample_seq=%lu | "
+        "https_sample_age_ms=%ld | https_fresh=%u | status=%s | led=%s | "
+        "vpn=NOT_TESTED | filtering_verdict=INCONCLUSIVE\\n",
+        codeName(result.code), sshPathName(state.ssh),
+        httpsFresh ? HttpsQuality::statusName(lastHttpsStatus) : "NOT_TESTED",
+        publicHttpsName(state.https),
+        static_cast<unsigned int>(result.httpsRan ? 1 : 0),
+        static_cast<unsigned long>(lastHttpsSampleSeq),
+        httpsLastMeasured ? static_cast<long>(ageMs) : -1L,
+        static_cast<unsigned int>(httpsFresh ? 1 : 0),
+        overall, ledName(state.led));
 }
 void printResult(const Result &result) {
     const StageTrace &stage = result.stages;
@@ -691,7 +865,11 @@ void setup() {
     delay(1500);
     pinMode(kLedPin, OUTPUT);
     updateLed();
-    Serial.println("=== DenaProbe | Phase 1B.3 independent HTTPS sample (experimental) ===");
+    Serial.println("=== DenaProbe | Phase 1B.4 independent status + LED states (experimental) ===");
+    Serial.println("[led-map] solid=SSH_PASS+HTTPS_PASS_OR_DISABLED | "
+                   "long_on_short_off=HTTPS_SLOW | triple_flash=HTTPS_ENDPOINT_FAILURE | "
+                   "double_flash=SSH_FAILURE | half_second_pulse=UNMEASURED | "
+                   "one_second_blink=WIFI_DOWN | vpn_health=NOT_TESTED");
     Serial.printf("[https-config] enabled=%d | interval_ms=%lu | sample_bytes=%lu | "
                   "target=cloudflare_speed_test | ca=GTS_ROOT_R4 | "
                   "tls_verify=REQUIRED | slow_body_threshold_ms=%lu | "
@@ -722,7 +900,7 @@ void setup() {
     if (!validConfig) {
         Serial.println("[ssh-deep] NOT_TESTED | reason=MISSING_CONFIG_OR_PIN");
         Serial.println("[config] Configure a verified SHA256 host-key pin locally.");
-        ledMode = LedMode::PARTIAL;
+        ledMode = LedMode::UNKNOWN;
         return;
     }
 
@@ -730,7 +908,7 @@ void setup() {
     if (!resultQueue) {
         Serial.println("[ssh-deep] NOT_TESTED | reason=QUEUE_ALLOC_FAILED");
         validConfig = false;
-        ledMode = LedMode::SUSPECT;
+        ledMode = LedMode::UNKNOWN;
         return;
     }
 
@@ -766,6 +944,10 @@ void loop() {
     Result result{};
     if (resultQueue && xQueueReceive(resultQueue, &result, 0) == pdTRUE) {
         workerRunning = false;
+        localProbeError = false;
+        sshLastMeasured = true;
+        lastSshCode = result.code;
+        lastSshResultAtMs = millis();
         printResult(result);
         printQuality(result);
         printHttpsResult(result);
@@ -773,24 +955,15 @@ void loop() {
             httpsLastMeasured = true;
             lastHttpsStatus = result.https.status;
             lastHttpsResultAtMs = millis();
+            lastHttpsSampleSeq = probeSequence;
             if (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY)
                 httpsScheduleReady = true; // Retry at next SSH probe.
         }
+        refreshLedState(millis());
         printOverall(result);
-        const bool httpsFresh = httpsLastMeasured &&
-            millis() - lastHttpsResultAtMs < 2U * kHttpsIntervalMs;
-        ledMode = (WiFi.status() != WL_CONNECTED) ? LedMode::WIFI_WAIT :
-                  result.code != Code::PASS ? LedMode::SUSPECT :
-                  !PROBE_HTTPS_QUALITY_ENABLED ? LedMode::SSH_READY :
-                  !httpsFresh ? LedMode::PARTIAL :
-                  lastHttpsStatus == HttpsQuality::Status::PASS ? LedMode::SSH_READY :
-                  (lastHttpsStatus == HttpsQuality::Status::CLOCK_NOT_READY ||
-                   lastHttpsStatus == HttpsQuality::Status::LOW_MEMORY)
-                       ? LedMode::PARTIAL : LedMode::SUSPECT;
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        ledMode = LedMode::WIFI_WAIT;
         if (now - lastWiFiAttemptMs >= kRetryWiFiMs) {
             WiFi.disconnect();
             connectWiFi();
@@ -801,9 +974,8 @@ void loop() {
         lastProbeMs = now;
         if (ESP.getFreeHeap() < kRequiredHeapBeforeTask) {
             Serial.println("[ssh-deep] NOT_TESTED | reason=LOW_FREE_HEAP");
-            ledMode = LedMode::SUSPECT;
+            localProbeError = true;
         } else {
-            ledMode = LedMode::PARTIAL;
             httpsWorkerEnabled = PROBE_HTTPS_QUALITY_ENABLED &&
                 (httpsScheduleReady ||
                  (now - lastHttpsScheduleMs >= kHttpsIntervalMs));
@@ -820,7 +992,7 @@ void loop() {
             if (!workerRunning) {
                 Serial.println("[ssh-deep] NOT_TESTED | reason=TASK_ALLOC_FAILED");
                 if (httpsWorkerEnabled) httpsScheduleReady = true;
-                ledMode = LedMode::SUSPECT;
+                localProbeError = true;
             }
         }
     }
@@ -830,9 +1002,11 @@ void loop() {
     if (workerRunning && !stalled &&
         millis() - workerStartMs >= kTaskStalledMs) {
         stalled = true;
-        ledMode = LedMode::SUSPECT;
         Serial.println("[ssh-deep] UNKNOWN | reason=WORKER_STALLED | "
                        "further_probes=DISABLED");
     }
+    // Apply link loss, evidence expiry and worker/resource errors even without
+    // receiving a fresh measurement. No temporary LED change on probe start.
+    refreshLedState(millis());
     delay(20);
 }
