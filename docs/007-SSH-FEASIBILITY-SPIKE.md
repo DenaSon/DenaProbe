@@ -29,7 +29,7 @@ The stage observer is an **instrumentation experiment**, not an independent vali
 - Phase 1B.2 was subsequently built and uploaded: real ESP32 log included `KEXINIT_TX=448ms`, `KEXINIT_RX=643ms`, `NEWKEYS_RX=2045ms`, SSH transport `3282ms`, and `SERVICE_ACCEPT_PASS` with a pinned host-key match. These are successful SSH stage observations, **not evidence of download throughput**.
 
 
-## Phase 1B.3 preview — SSH Quality Capture (NOT hardware validated)
+## Phase 1B.3 — SSH Quality Capture (hardware field-tested)
 
 **Purpose:** collect repeatable, low-cost measurements **now** during a reported slowdown without automatically declaring a VPN speed problem.
 
@@ -51,7 +51,7 @@ Status `ssh_latency_flag`:
 
 Optional private (ignored) macros are `PROBE_QUALITY_HEALTHY_TRANSPORT_MS` and `PROBE_QUALITY_ALERT_RATIO_PERCENT`. **Both default to zero: no speculative slowdown classifications.** Configure them only after measuring validated healthy and slow reference samples; do not derive from this capture alone. Neither is a network identifier or a private password, but keep private settings out of Git.
 
-The buffer contains only volatile, aggregate metrics. It is cleared after reset and has no NVLBot integration, persistence, traffic generation, SSH login or remote configuration. The onboard LED still reflects connectivity to SSH service, not the quality flag.
+The buffer contains only volatile, aggregate metrics. It is cleared after reset and has no NVLBot integration, persistence, SSH login or remote configuration. The LED is now driven by the independent current-state model described in Phase 1B.4; the rolling window remains historical evidence, not the present SSH/HTTPS verdict.
 
 **Capture procedure (PowerShell):** `git pull --ff-only`, then `pio run -e esp32dev_ssh_feasibility`, then `pio run -e esp32dev_ssh_feasibility -t upload`, then `pio device monitor -b 115200`. Run one command at a time. Keep the phone connected to the **MCI LTE hotspot**, do not switch carriers during one window, and record the contemporaneous NPV Tunnel slowdown separately. Capture at least 12 samples / approximately six minutes. Compare with a later known-good window on the same path. Do not label the device's Wi-Fi RSSI as LTE signal.
 
@@ -59,9 +59,9 @@ The buffer contains only volatile, aggregate metrics. It is cleared after reset 
 
 ### Field observation — 2026-10-29 incident
 
-Four consecutive DNS failures were captured 30 seconds apart after the ESP32 hotspot Wi-Fi went UP. Target name resolution failed quickly (about 10–16 ms); SSH KEXINIT, NEWKEYS and SERVICE_ACCEPT were correctly `NOT_TESTED`. The quality window reported `PATH_FAILURES_OBSERVED` at eligible=4/pass=0, with Wi-Fi RSSI between approximately −50 and −61 dBm. This establishes **DNS-stage failure on this hotspot path**, not download speed reduction, a server outage, censorship, or a hardware defect. The follow-up DNS-control probe was added to distinguish target-specific from broader resolver failure. **Its first local build, upload and hardware validation remain pending.**
+DNS failures were initially observed with hotspot Wi-Fi UP; the operator subsequently clarified that the phone's *mobile data was intentionally OFF* at that time. These DNS failures must **not** be classified as MCI filtering. The added DNS-control probe remains a narrowly scoped aid for future diagnosis; a resolver result cannot establish bandwidth or VPN health. Later MCI LTE logs showed successful SSH transport but two slow independent public HTTPS 64 KiB samples.
 
-## Phase 1B.3 — Independent HTTPS 64 KiB sample (source ready, not yet built or field-tested)
+## Phase 1B.3 — Independent HTTPS 64 KiB sample (hardware field-tested)
 
 This update adds a **separate, sequential** public HTTPS sample after the SSH session has closed. It does **not** create an SSH channel, authenticate, use NPV Tunnel, or claim to reproduce Telegram downloads.
 
@@ -71,22 +71,61 @@ This update adds a **separate, sequential** public HTTPS sample after the SSH se
 - Sample size capped at **65,536 bytes (64 KiB)**. HTTP body is discarded as it arrives using a bounded stream sink, including HTTP chunked responses; no payload retained. Refuse larger/mismatched bodies. Short per-connection and read timeouts, and a 12-second body-duration cap. Hostname is resolved anew; no request credentials, user data or Core IP used.
 - Scheduled at most every **180 seconds** while Wi-Fi and SSH monitoring continue every **30 seconds**; asynchronous NTP failures can be checked again next cycle. Continuous usage is approximately **30 MiB/day** from payload alone, plus TCP/TLS overhead, so this experiment must be disabled after capture if mobile data is limited (`PROBE_HTTPS_QUALITY_ENABLED=0` in ignored private config). Do not run unattended as a production speed test.
 - Serial output: `[https-quality]` reports `result`, `bytes`, DNS time, HTTP header-completion time including TLS and response, first-body time, body-transfer duration and **approximate** KiB/s for the 64 KiB sample. The latter is **not a full-bandwidth benchmark**, RTT, packet loss, or VPN speed. A short sample with a slow transfer may emit `SLOW_64K_SAMPLE_SUSPECT`; `PASS` means the exact bytes were received under the configured time threshold, not that Telegram downloads succeed.
-- `[probe-overall]` reports independent SSH and HTTPS states. For successful SSH but failed HTTPS, label `SSH_PASS_PUBLIC_HTTPS_FAILED_OR_INCOMPLETE`. If the full 64 KiB response arrives but body transfer takes **at least 4,000 ms**, label `SSH_PASS_PUBLIC_HTTPS_SLOW_SUSPECT` (conservative sample-level heuristic, not measured ISP throttling or established bandwidth SLA). If the sample was not verified, label `SSH_PASS_HTTPS_NOT_MEASURED` or `SSH_PASS_HTTPS_UNMEASURABLE`. If both tests pass promptly: `SSH_AND_PUBLIC_HTTPS_PASS_VPN_UNKNOWN`. Set the optional private macro `PROBE_HTTPS_SLOW_BODY_MS` to adjust the heuristic, or to `0` to disable it.
-- Onboard LED now means **both SSH and recent public HTTPS passed** when solid. SSH failure / HTTP failure => warning pattern; SSH success with unmeasured HTTPS => partial pattern. This is only an experimental indication for the tested paths, not an NPV or Telegram health signal. Wi-Fi disconnected => slow blink.
+- `[probe-overall]` and the LED now use the **independent current-state model in Phase 1B.4**. If the complete 64 KiB HTTP response takes at least **4,000 ms** to transfer, HTTPS gets `SLOW_SAMPLE_SUSPECT`. Successful SSH does not prove HTTPS or VPN health; a failed public HTTPS sample does not prove an SSH, Telegram, or VPN fault. The optional private macro `PROBE_HTTPS_SLOW_BODY_MS` adjusts or (with `0`) disables this *sample-level* heuristic.
+- The GPIO2 LED uses the **six distinct patterns** in Phase 1B.4. It indicates only tested paths and is **never a claim that NPV Tunnel is healthy**.
 - Security and reliability caveat: NTP may be blocked even if HTTPS works in other clients; this yields `CLOCK_NOT_READY`. Public Cloudflare speedtest routing may differ from Telegram or SSH relay. The fixed CA root may need maintenance. Only local physical testing can confirm TLS RAM budget on this ESP32.
 
 ### 2026-10-29 build-size fix — experimental partition only
 
 The first HTTPS-enabled PlatformIO build **failed at the program-size check**, not at RAM allocation: binary `1,380,232` bytes; default app partition `1,310,720` bytes (105.3%). **That build was not flashed.** The branch now configures `board_build.partitions = min_spiffs.csv` **only** for `esp32dev_ssh_feasibility`. On a standard `esp32dev` with **4 MiB flash**, the official `min_spiffs.csv` retains two OTA app slots (`app0` / `app1`) of `0x1E0000 = 1,966,080` bytes each, and reduces the SPIFFS area to 128 KiB. The default `esp32dev` build and `src/main.cpp` remain unchanged. Source: [Espressif Arduino-ESP32 2.0.17 min_spiffs.csv](https://github.com/espressif/arduino-esp32/blob/2.0.17/tools/partitions/min_spiffs.csv).
 
-**Caution:** partition layout changes may make preexisting flash filesystem data inaccessible or require reformatting. Do not flash onto a board with valuable SPIFFS data without backing it up. This board's experimental firmware is not designed to use SPIFFS. Do not assume compatibility with a board that has less than 4 MiB flash. **The updated partition build has not yet been validated in PlatformIO or on ESP32 hardware.**
+**Caution:** partition layout changes may make preexisting flash filesystem data inaccessible or require reformatting. Do not flash onto a board with valuable SPIFFS data without backing it up. This board's experimental firmware is not designed to use SPIFFS. Do not assume compatibility with a board that has less than 4 MiB flash. **The owner subsequently built, flashed, and executed the 1B.3 HTTPS firmware on the ESP32 successfully.**
 
-### Hardware acceptance test (not yet executed)
+### Hardware acceptance procedure (1B.3 run; new 1B.4 LED patch pending)
 
 1. `git pull --ff-only`; `pio run -e esp32dev_ssh_feasibility`; only after a successful build: `pio run -e esp32dev_ssh_feasibility -t upload`; `pio device monitor -b 115200 --filter time`.
 2. Observe `[https-quality]` and `[probe-overall]` during the incident. `PASS` requires an actual verified 65,536-byte HTTPS response. If `CLOCK_NOT_READY`, `LOW_MEMORY`, or TLS errors occur, do **not** conclude filtering.
 3. Compare with an independent browser/NPV Telegram download on the same MCI LTE connection at the same time. A direct HTTPS sample does not test the VPN tunnel or reproduce Telegram's endpoints.
-4. Check watchdog, heap, stable SSH callback results and LED. Physical USB/PlatformIO build & test are outstanding; no merge is authorized.
+4. For the new 1B.4 LED/status patch, verify steady SSH on an accessible relay, simulate or observe SSH timeout without claiming filtering, and compare slow / successful public HTTPS samples. **This patch has not yet been built, flashed, or field-validated. No merge is authorized.**
+
+## Phase 1B.4 — Independent current-state SSH, HTTPS and LED (source patch; local build and flash pending)
+
+**Purpose:** avoid reporting an SSH outage simply because the unrelated 64 KiB Cloudflare HTTPS sample is slow; distinguish *current* SSH evidence from the historical 12-probe window. Changes are confined to `src/ssh_feasibility_main.cpp` on `feature/1b-ssh-feasibility-20261029`; no changes to the stable `src/main.cpp`, trusted SSH host-key pin, authentication scope, test targets or frequency.
+
+### Current-state model
+
+- `ssh_path=SERVICE_ACCEPT_PASS | PATH_FAILURE | LOCAL_UNMEASURABLE | STALE | NOT_TESTED`: from the **last completed SSH test**; expires after **90 seconds** without new evidence. Local resource/task failures are unmeasurable, not network outages.
+- `public_https=PASS | SLOW_SAMPLE_SUSPECT | ENDPOINT_FAILURE | UNMEASURABLE | STALE | NOT_TESTED | DISABLED`: from the **last actually executed** HTTPS download; expires after **360 seconds**. `CLOCK_NOT_READY` and `LOW_MEMORY` are unmeasurable, not endpoint failures.
+- `vpn=NOT_TESTED` **always**: no SSH user authentication, NPV client or tunneled data path; neither `VPN_OK` nor `VPN_FAILED` is asserted.
+- `[probe-overall]` retains `ssh=` and `https=`, adds `ssh_path=`, `public_https=`, `led=`, `https_new_sample=`, `https_sample_seq=`, `https_sample_age_ms=` and `https_fresh=`. Repeated 30-second status lines are thus distinguishable from new 3-minute HTTPS samples. `[led-state]` logs a *mode change* only, not each LED toggle.
+- Starting a new SSH worker no longer temporarily changes the LED to an unknown state. Previous failures retained in the 12-sample `[quality-window]` remain **historical** data, not the latest current SSH status. Wi-Fi link failure always takes priority.
+
+### GPIO2 blue LED patterns (each 2-second cycle)
+
+| Mode | LED behavior | What it means |
+| --- | --- | --- |
+| `SSH_READY` | Constant ON | SSH service accepted; latest public HTTPS passed **or HTTPS disabled**; NPV untested |
+| `PUBLIC_HTTPS_SLOW` | ON 1.5 s, OFF 0.5 s | SSH succeeded; only the independent public HTTPS sample is slow |
+| `PUBLIC_HTTPS_FAILURE` | Three quick flashes | SSH succeeded; latest public HTTPS endpoint check failed/incomplete |
+| `SSH_FAILURE` | Two quick flashes | Latest SSH failed to reach verified service acceptance |
+| `UNKNOWN` | ON 0.5 s, OFF 1.5 s | Never measured, locally unmeasurable or stale |
+| `WIFI_DOWN` | ON 1 s, OFF 1 s | Hotspot Wi-Fi connection is down |
+
+Precedence: Wi-Fi down → current SSH failure → SSH unavailable/stale → slow/failed public HTTPS → success. The LED never claims VPN or Telegram health.
+
+### Observations motivating the patch
+
+- On **2026-10-29 around 03:21–03:28 local time**, SSH repeatedly returned `SSH_TRANSPORT_TIMEOUT` and no observed Banner after a relay change, while hotspot Wi-Fi stayed UP and independent public HTTPS transferred bytes. This is **stage-ambiguous**, not a proved filtering signature.
+- Once the relay path recovered, sequences 44–49 reported repeated `SERVICE_ACCEPT_PASS` while the 12-sample window still contained earlier network failures. Using the historical window to drive the present LED would have been misleading.
+- 64 KiB Cloudflare samples during testing on MCI and RighTel took roughly 4–6 seconds of body transfer. This is a **limited endpoint-specific measurement**, not the speed of the NPV tunnel or evidence of throttling by either operator.
+
+### 1B.4 acceptance criteria (pending)
+
+1. On the owner's ESP32, run `pio run -e esp32dev_ssh_feasibility`; upload **only after a successful build**, then monitor COM6 at 115200 baud.
+2. On an accessible SSH path with slow public HTTPS, verify `ssh_path=SERVICE_ACCEPT_PASS`, `public_https=SLOW_SAMPLE_SUSPECT`, `led=PUBLIC_HTTPS_SLOW`, and the long-on/short-off LED pattern.
+3. On SSH timeout, verify `ssh_path=PATH_FAILURE` and double flashes even if the public HTTPS sample passes. On SSH recovery, the current state must recover **without deleting historical quality-window failures**.
+4. Verify `https_new_sample=0` with increasing `https_sample_age_ms` between downloads, plus status expiry if new data is unavailable. Check no temporary LED change on ordinary 30-second task starts.
+5. Verify heap/watermarks, flash capacity, stack and watchdog. No NVLBot changes, relay credentials, VPN assertions, or merge without approval.
 
 ## Isolation
 
@@ -129,9 +168,9 @@ Run each command separately. Keep v0.0.4 backed up. Never upload firmware before
 - `SERVICE_ACCEPT_TIMEOUT`: request awaited but no response before deadline; does not prove filtering.
 - `SSH_TRANSPORT_ERROR`: libssh failed before successful transport. It may be TCP, algorithm, key-exchange or protocol related; finer attribution is **not yet proven**.
 - `HOST_KEY_MISMATCH`: abort before service request (fail closed).
-- `WORKER_STALLED`: diagnostic worker did not complete within 30 seconds; further probes disabled until reboot, without unsafe task deletion.
+- `WORKER_STALLED`: diagnostic worker did not complete within 55 seconds; further probes disabled until reboot, without unsafe task deletion.
 
-Only `SERVICE_ACCEPT_PASS` illuminates the LED steadily (SSH_READY). An incomplete or unconfigured run never claims NPV health. Wi-Fi wait blinks slowly, in-progress/untested is 1.5s ON/0.5s OFF, failed probe is a double pulse.
+The new LED patterns are detailed under Phase 1B.4. A steady LED is not proof of NPV login or payload delivery; public HTTPS is an independent endpoint-specific observation.
 
 The FreeRTOS worker uses a dedicated 51,200-byte stack, nonblocking SSH API, a 12-second transport deadline, 8-second service deadline and bounded frequency (30 seconds only in incident-capture variant). Free heap, minimum heap, largest 8-bit block and stack watermark are reported.
 
