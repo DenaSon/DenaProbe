@@ -67,7 +67,7 @@ enum class SshPathState : uint8_t {
     NOT_TESTED, PASS, FAILURE, LOCAL_UNMEASURABLE, STALE
 };
 enum class PublicHttpsState : uint8_t {
-    DISABLED, NOT_TESTED, PASS, SLOW_SUSPECT, ENDPOINT_FAILURE, UNMEASURABLE, STALE
+    CHECK_DISABLED, NOT_TESTED, PASS, SLOW_SUSPECT, ENDPOINT_FAILURE, UNMEASURABLE, STALE
 };
 enum class Code : uint8_t {
     PASS, WIFI_LOST, DNS_FAIL, SESSION_ALLOC_FAILED, SSH_OPTIONS_FAILED,
@@ -268,7 +268,7 @@ const char *sshPathName(SshPathState state) {
 
 const char *publicHttpsName(PublicHttpsState state) {
     switch (state) {
-        case PublicHttpsState::DISABLED: return "DISABLED";
+        case PublicHttpsState::CHECK_DISABLED: return "DISABLED";
         case PublicHttpsState::NOT_TESTED: return "NOT_TESTED";
         case PublicHttpsState::PASS: return "PASS";
         case PublicHttpsState::SLOW_SUSPECT: return "SLOW_SAMPLE_SUSPECT";
@@ -292,7 +292,7 @@ CurrentState currentState(uint32_t now) {
         SshPathState::NOT_TESTED, PublicHttpsState::NOT_TESTED, LedMode::UNKNOWN
     };
     if (!PROBE_HTTPS_QUALITY_ENABLED) {
-        state.https = PublicHttpsState::DISABLED;
+        state.https = PublicHttpsState::CHECK_DISABLED;
     } else if (!httpsLastMeasured) {
         state.https = PublicHttpsState::NOT_TESTED;
     } else if (now - lastHttpsResultAtMs >= kHttpsFreshnessMs) {
@@ -354,7 +354,7 @@ CurrentState currentState(uint32_t now) {
     } else if (state.https == PublicHttpsState::ENDPOINT_FAILURE) {
         state.led = LedMode::HTTPS_FAILURE;
     } else if (state.https == PublicHttpsState::PASS ||
-               state.https == PublicHttpsState::DISABLED) {
+               state.https == PublicHttpsState::CHECK_DISABLED) {
         state.led = LedMode::SSH_READY;
     } else {
         state.led = LedMode::UNKNOWN;
@@ -779,7 +779,7 @@ void printOverall(const Result &result) {
         WiFi.status() != WL_CONNECTED ? "WIFI_DOWN" :
         state.ssh == SshPathState::FAILURE ? "SSH_NOT_READY" :
         state.ssh != SshPathState::PASS ? "SSH_UNMEASURABLE_OR_STALE" :
-        state.https == PublicHttpsState::DISABLED ? "SSH_PASS_HTTPS_DISABLED" :
+        state.https == PublicHttpsState::CHECK_DISABLED ? "SSH_PASS_HTTPS_DISABLED" :
         state.https == PublicHttpsState::PASS
             ? "SSH_PASS_PUBLIC_HTTPS_PASS_VPN_UNKNOWN" :
         state.https == PublicHttpsState::SLOW_SUSPECT
