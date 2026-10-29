@@ -1,4 +1,6 @@
 #pragma once
+#include <Arduino.h>
+#include "../https_quality.h"
 // DenaProbe R1 internal module: compiled only by the experimental PlatformIO entrypoint.
 
 namespace DenaProbe {
