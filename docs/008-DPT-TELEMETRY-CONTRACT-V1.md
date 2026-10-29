@@ -7,13 +7,14 @@
 This is the **single cross-platform source of truth** for a future firmware refactor and NVLBot ingest implementation. Do not implement by guessing C++ enum ordinals. The companion machine-readable files are:
 
 - `contracts/dpt/v1/code-registry.json` — frozen wire values, independent namespaces;
-- `contracts/dpt/v1/telemetry.schema.json` — structural payload validation (JSON Schema 2020-12).
+- `contracts/dpt/v1/telemetry.schema.json` — structural payload validation (JSON Schema 2020-12);
+- `contracts/dpt/v1/fixtures.json` — fictitious positive examples for both implementations.
 
 Both sides MUST use the same released contract version and conformance fixtures. DPT/1 is **not** currently an HTTP route, firmware feature, DB table, or notification job.
 
 ## 1. Normative vocabulary and invariants
 
-**MUST / MUST NOT / SHOULD / MAY** carry their usual normative meanings. Unknown/newer versions MUST be rejected (or safely quarantined) rather than silently reinterpreted. Unknown numeric codes MUST remain `UNKNOWN(code)`, not `PASS` or outage.
+**MUST / MUST NOT / SHOULD / MAY** carry their usual normative meanings. Unknown/newer **protocol versions** MUST be rejected (or safely quarantined) rather than silently reinterpreted. Unknown numeric **status/stage/HTTPS** codes within DPT/1 MUST be retained as `UNKNOWN(code)` and excluded from alert decisions, not interpreted as `PASS` or outage.
 
 1. **Observation, not diagnosis:** distinguish what finished (`s`), the conservative final/stop stage (`p`), observed progress (`o`), and timing measurements. A bit marking a received packet does not prove cryptographic verification.
 2. **Independent paths:** SSH probe and public HTTPS probe are separate sessions and separate conclusions. Missing HTTPS `h` means **no new HTTPS measurement in this event**, not pass, fail, or disabled.
@@ -89,7 +90,7 @@ All root field names are ASCII, case sensitive; `additionalProperties=false` in 
 | `h` | object | optional | **A new HTTPS attempt performed during this result**; NEVER a cached previous result |
 | `ts` | uint64 | optional | UTC UNIX epoch **milliseconds** at the event, only when clock is synchronized and validated |
 
-`k=3 BOOT` MUST be the first event in a boot (`q=1`), announced with the same `id,b` before normal telemetry. It may be delivered late if the device was offline. It is an authenticated lifecycle marker, **not SSH reachability evidence**. `k=2 DEVICE_EVENT` MUST contain a local/event `s` code (`90..96`); no new SSH measurement is implied. `k=1 PROBE_RESULT` MUST have `t,w,s,p,o`. When `w=0` the board may create a local failure observation, but it cannot upload until Wi-Fi returns. Silence is not an explicit Wi-Fi-down event.
+`k=3 BOOT` MUST be the first event in a boot (`q=1`), announced with the same `id,b` before normal telemetry. It may be delivered late if the device was offline. It is an authenticated lifecycle marker, **not SSH reachability evidence**. `k=2 DEVICE_EVENT` MUST contain a local/event `s` code (`90..96` for this initial registry, later values are forward-compatible); no new SSH measurement is implied. For `s=96` (Wi-Fi link transition), `w` is mandatory. Unknown/newer local codes are stored without alert interpretation. `k=1 PROBE_RESULT` MUST have `t,w,s,p,o`. When `w=0` the board may create a local failure observation, but it cannot upload until Wi-Fi returns. Silence is not an explicit Wi-Fi-down event.
 
 ### New HTTPS subobject (`h`)
 
@@ -146,7 +147,7 @@ All root field names are ASCII, case sensitive; `additionalProperties=false` in 
 | 95 | `TASK_ALLOC_FAILED` | Local task creation failure |
 | 96 | `WIFI_LINK_EVENT` | Wi-Fi link transition, may be buffered until reconnect |
 
-Codes `0–51` are for `k=1`. Codes `90–96` signal local setup/resource/worker/link conditions; they are not network path failures. In particular `HOST_KEY_MISMATCH` is a **security incident/trust failure**, not a generic ISP outage. `SERVICE_ACCEPT_TIMEOUT` is an observation, not proof that a specific network packet left the device or was censored.
+Codes `0–51` are SSH-path outcomes or non-results. Codes `90–96` signal local setup/resource/worker/link conditions and MUST NOT be treated as network-path failures. A local SSH-abort inside a completed probe may use `k=1,s=90/91`; an independently reported device/worker issue uses `k=2,s=90..96`. In particular `HOST_KEY_MISMATCH` is a **security incident/trust failure**, not a generic ISP outage. `SERVICE_ACCEPT_TIMEOUT` is an observation, not proof that a specific network packet left the device or was censored.
 
 ### 5.4 Stage (`p`)
 | Code | Name | Boundary/qualification |
@@ -208,7 +209,7 @@ A bit set means that evidence occurred. A bit clear means **not observed**, not 
 | 1 | `DUPLICATE` | Exact duplicate of already stored event |
 | 2 | `HISTORY_ONLY` | Durably stored as historical-only; never promoted to latest/live state |
 
-**Reserved code policy:** codes in a namespace can be added only after code registry + schema + consumer tests are updated. Never repurpose, reorder, or reuse a released number. Adding a new code with identical field semantics is a backward-compatible minor registry revision provided consumers preserve UNKNOWN(code). A field rename, changed meaning, changed unit, different signature or incompatible shape requires **DPT/2** and a new endpoint path.
+**Reserved code policy:** codes in a namespace can be added only after code registry + schema + consumer tests are updated. Never repurpose, reorder, or reuse a released number. Adding a new code with identical field semantics is a backward-compatible minor registry revision **only if** consumers can ingest and retain unknown numeric codes without treating them as PASS or FAIL. Unknown values MUST be quarantined from alert evaluation until a registry update and tests are deployed. A field rename, changed meaning, changed unit, different signature or incompatible shape requires **DPT/2** and a new endpoint path.
 
 ## 6. Invariants and meaningful combinations
 
@@ -312,6 +313,8 @@ Minimum logical entities (not final table migrations):
 - No collection of customer traffic, account passwords or payload bytes. Cloudflare sample body is discarded; only bytes/timing/results are transmitted.
 - Device-side signal is 2.4GHz Wi-Fi-to-hotspot; carrier is a **declared** context, not automatically sensed. `filtering_verdict` is never a DPT/1 wire field.
 - Raw event retention, access control and aggregation policy must be decided before production. Separate retained raw evidence from translated incident state.
+
+**Validation layering:** the JSON Schema validates types, lengths and required shape. It intentionally permits **unknown future numeric status/stage/HTTPS codes** within reserved unsigned ranges so older receivers can store them safely. An additional semantic validator, driven by the registry plus this specification, checks codes, bit-mask invariants, sample age, kind-specific eligibility and freshness. Unknown values MUST NOT silently become known codes or trigger alerts.
 
 ## 11. Conformance and release gate (implementation not started)
 
