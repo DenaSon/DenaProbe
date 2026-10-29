@@ -107,7 +107,7 @@ void printHttpsResult(const HttpsQuality::Result &h) {
         h.httpCode, h.httpStreamResult);
 }
 
-void printOverall(const ProbeState &snapshot, uint32_t sshSequence, bool httpsNewSample, bool wifiConnected) {
+void printOverall(const ProbeState &snapshot, bool httpsNewSample, bool wifiConnected) {
     const uint32_t now = millis();
     const CurrentState state = snapshot.currentState(now, wifiConnected);
     const uint32_t ageMs = snapshot.httpsLastMeasured ? now - snapshot.lastHttpsResultAtMs : 0;
