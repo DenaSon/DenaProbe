@@ -1,0 +1,487 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://denaprobe.local/contracts/dpt/v1/telemetry.schema.json",
+  "title": "DenaProbe Telemetry Protocol DPT/1 request body",
+  "description": "Structural validation; HMAC, semantic code combinations, monotonic ages and boot ordering MUST be checked in the ingest service.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "b",
+    "q",
+    "u",
+    "k"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+    },
+    "b": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "q": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "u": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "k": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "w": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "r": {
+      "type": "integer",
+      "minimum": -127,
+      "maximum": -1
+    },
+    "s": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        10,
+        20,
+        30,
+        31,
+        40,
+        41,
+        50,
+        51,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96
+      ]
+    },
+    "p": {
+      "type": "integer",
+      "enum": [
+        0,
+        10,
+        20,
+        21,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        40,
+        50,
+        51,
+        52,
+        90
+      ]
+    },
+    "o": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "d": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600000
+    },
+    "x": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600000
+    },
+    "a": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600000
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 1700000000000,
+      "maximum": 9007199254740991
+    },
+    "h": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "c",
+        "u"
+      ],
+      "properties": {
+        "c": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2,
+            10,
+            11,
+            12,
+            20,
+            30,
+            31,
+            32,
+            40,
+            41,
+            42
+          ]
+        },
+        "u": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "bt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12000
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "ds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "hd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "fb": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "hc": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "c": {
+                "enum": [
+                  1,
+                  2
+                ]
+              }
+            },
+            "required": [
+              "c"
+            ]
+          },
+          "then": {
+            "required": [
+              "n",
+              "bt"
+            ],
+            "properties": {
+              "n": {
+                "const": 65536
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "k": {
+            "const": 1
+          }
+        },
+        "required": [
+          "k"
+        ]
+      },
+      "then": {
+        "required": [
+          "t",
+          "w",
+          "s",
+          "p",
+          "o"
+        ],
+        "properties": {
+          "s": {
+            "enum": [
+              0,
+              1,
+              10,
+              20,
+              30,
+              31,
+              40,
+              41,
+              50,
+              51,
+              90,
+              91
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "k": {
+            "const": 2
+          }
+        },
+        "required": [
+          "k"
+        ]
+      },
+      "then": {
+        "required": [
+          "s"
+        ],
+        "properties": {
+          "s": {
+            "enum": [
+              90,
+              91,
+              92,
+              93,
+              94,
+              95,
+              96
+            ]
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "p"
+              ]
+            },
+            {
+              "required": [
+                "o"
+              ]
+            },
+            {
+              "required": [
+                "h"
+              ]
+            },
+            {
+              "required": [
+                "x"
+              ]
+            },
+            {
+              "required": [
+                "a"
+              ]
+            },
+            {
+              "required": [
+                "d"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "k": {
+            "const": 3
+          }
+        },
+        "required": [
+          "k"
+        ]
+      },
+      "then": {
+        "properties": {
+          "q": {
+            "const": 1
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "s"
+              ]
+            },
+            {
+              "required": [
+                "p"
+              ]
+            },
+            {
+              "required": [
+                "o"
+              ]
+            },
+            {
+              "required": [
+                "h"
+              ]
+            },
+            {
+              "required": [
+                "t"
+              ]
+            },
+            {
+              "required": [
+                "x"
+              ]
+            },
+            {
+              "required": [
+                "a"
+              ]
+            },
+            {
+              "required": [
+                "d"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "w": {
+            "enum": [
+              0,
+              2
+            ]
+          }
+        },
+        "required": [
+          "w"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "r"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "s": {
+            "const": 1
+          },
+          "k": {
+            "const": 1
+          }
+        },
+        "required": [
+          "s",
+          "k"
+        ]
+      },
+      "then": {
+        "properties": {
+          "p": {
+            "const": 52
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "s": {
+            "const": 50
+          },
+          "k": {
+            "const": 1
+          }
+        },
+        "required": [
+          "s",
+          "k"
+        ]
+      },
+      "then": {
+        "properties": {
+          "p": {
+            "const": 51
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "s": {
+            "const": 41
+          },
+          "k": {
+            "const": 1
+          }
+        },
+        "required": [
+          "s",
+          "k"
+        ]
+      },
+      "then": {
+        "properties": {
+          "p": {
+            "const": 40
+          }
+        }
+      }
+    }
+  ]
+}
