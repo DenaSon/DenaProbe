@@ -9,6 +9,8 @@ This is the **single cross-platform source of truth** for a future firmware refa
 - `contracts/dpt/v1/code-registry.json` — frozen wire values, independent namespaces;
 - `contracts/dpt/v1/telemetry.schema.json` — structural payload validation (JSON Schema 2020-12);
 - `contracts/dpt/v1/fixtures.json` — fictitious positive examples for both implementations.
+- `contracts/dpt/v1/hmac-test-vectors.json` — exact public HMAC/SHA-256 signing test vector;
+- `contracts/dpt/v1/ack.schema.json` — durable ingestion response schema.
 
 Both sides MUST use the same released contract version and conformance fixtures. DPT/1 is **not** currently an HTTP route, firmware feature, DB table, or notification job.
 
@@ -61,6 +63,8 @@ POST
 ```
 
 `X-DPT-Signature` is unpadded base64url of the raw 32-byte HMAC. `device_id` and `key_id` are the literal validated header values, `sent_uptime_ms_decimal` is canonical base-10 unsigned decimal (no leading zeros except zero), and `body_sha` uses exact bytes. Reject duplicated signed headers, missing headers, noncanonical representations, header/body `id` mismatch, unknown/revoked keys, oversized body, invalid signature or malformed JSON. Verify MAC with a timing-safe comparison; do not return detailed authentication reasons to the client. HMAC verification MUST precede accepting a telemetry event. Method and path are signed to prevent cross-endpoint reuse.
+
+**Cross-language golden vector (public test key only):** `contracts/dpt/v1/hmac-test-vectors.json` fixes exact raw JSON bytes, a synthetic 32-byte key (`000102...1f`), headers, the lowercase SHA-256 body hash (`79a60b9ea4807af5edc542105a25b119f7b4f93b8c257599f1ee847b1db145d3`), and the expected base64url signature `FvC6ftohQqvxpjiMdAQx-nCdsU3NccQdfZQKBGQpoBA`. Both firmware and NVLBot MUST reproduce that signature **byte-for-byte**, then demonstrate rejection when any signed input is changed. This fixture key is public and MUST NEVER be provisioned on a real device.
 
 **Why uptime in a header?** `X-DPT-Sent-Uptime-Ms` is regenerated and signed for **every actual send/retry**, while the event body (and `id,b,q`) remains identical. If an event measured at `u=100000` is retried at send uptime `200000`, the backend can see that it was already at least 100 seconds old at transmission. This is a sender-reported age, not independently authenticated wall-clock time; server also records its own arrival time. Require `sent_uptime_ms >= u` and `>=h.u` if HTTPS `h` is present.
 
