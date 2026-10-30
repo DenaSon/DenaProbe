@@ -29,8 +29,15 @@ void expectQualityTokens(std::initializer_list<const char *> tokens) {
         assert(line.find(token) != std::string::npos);
     }
 }
+bool hasLog(const char *needle) {
+    for (const auto &entry : Fake::logs) {
+        if (entry.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
 void resetOrchestration() {
-    scheduler = {}; probeState = {}; quality = {}; eventQueue.begin();
+    scheduler = {}; probeState = {}; clockDiagnostics = {};
+    quality = {}; eventQueue.begin();
     workerRunning = workerRunHttps = false; workerStartMs = 0;
     wifiStatusInitialized = previousWifiConnected = false;
     probeState.validConfig = true;
@@ -157,6 +164,108 @@ int main() {
         assert(s.currentState(360000, false).led == LedMode::WIFI_DOWN);
         s.lastSshCode = Code::WIFI_LOST;
         assert(s.currentState(360000, true).ssh == SshPathState::LOCAL_UNMEASURABLE);
+    });
+    check("LED holds solid for SSH pass when HTTPS is unknown or clock invalid", [] {
+        ProbeState s;
+        s.validConfig = s.sshLastMeasured = true;
+        s.lastSshCode = Code::PASS; s.lastSshResultAtMs = 100;
+        assert(s.currentState(100, true).led == LedMode::SSH_READY);
+        s.httpsLastMeasured = true; s.lastHttpsResultAtMs = 100;
+        s.lastHttpsStatus = HttpsQuality::Status::CLOCK_NOT_READY;
+        assert(s.currentState(100, true).led == LedMode::SSH_READY);
+        s.lastHttpsStatus = HttpsQuality::Status::LOW_MEMORY;
+        assert(s.currentState(100, true).led == LedMode::SSH_READY);
+        s.lastHttpsStatus = HttpsQuality::Status::PASS;
+        assert(s.currentState(100, true).led == LedMode::SSH_READY);
+        assert(s.currentState(kHttpsFreshnessMs + 100, true).https ==
+               PublicHttpsState::STALE);
+        // SSH is also stale by then; restore a fresh SSH result.
+        s.lastSshResultAtMs = kHttpsFreshnessMs + 100;
+        assert(s.currentState(kHttpsFreshnessMs + 100, true).led ==
+               LedMode::SSH_READY);
+    });
+    check("LED prioritizes Wi-Fi, SSH failures and measured HTTPS warnings", [] {
+        ProbeState s; s.validConfig = s.sshLastMeasured = s.httpsLastMeasured = true;
+        s.lastSshCode = Code::PASS; s.lastSshResultAtMs = 100;
+        s.lastHttpsResultAtMs = 100;
+        s.lastHttpsStatus = HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT;
+        assert(s.currentState(100, true).led == LedMode::HTTPS_SLOW);
+        s.lastHttpsStatus = HttpsQuality::Status::DNS_FAIL;
+        assert(s.currentState(100, true).led == LedMode::HTTPS_FAILURE);
+        assert(s.currentState(100, false).led == LedMode::WIFI_DOWN);
+        s.lastSshCode = Code::SSH_CONNECT_TIMEOUT;
+        assert(s.currentState(100, true).led == LedMode::SSH_FAILURE);
+        s.lastSshCode = Code::WIFI_LOST;
+        assert(s.currentState(100, true).led == LedMode::UNKNOWN);
+        s.lastSshCode = Code::PASS; s.sshLastMeasured = false;
+        assert(s.currentState(100, true).led == LedMode::UNKNOWN);
+    });
+    check("Onboard LED timing preserves solid and warning blink patterns", [] {
+        StatusLed led; led.begin();
+        led.setMode(LedMode::SSH_READY);
+        Fake::now = 100; led.update(); assert(Fake::ledLevel == HIGH);
+        Fake::now = 1600; led.update(); assert(Fake::ledLevel == HIGH);
+        led.setMode(LedMode::WIFI_DOWN);
+        Fake::now = 1500; led.update(); assert(Fake::ledLevel == LOW);
+        Fake::now = 200; led.update(); assert(Fake::ledLevel == HIGH);
+        led.setMode(LedMode::SSH_FAILURE);
+        Fake::now = 200; led.update(); assert(Fake::ledLevel == LOW);
+        Fake::now = 350; led.update(); assert(Fake::ledLevel == HIGH);
+        led.setMode(LedMode::HTTPS_FAILURE);
+        Fake::now = 800; led.update(); assert(Fake::ledLevel == LOW);
+        Fake::now = 650; led.update(); assert(Fake::ledLevel == HIGH);
+        led.setMode(LedMode::HTTPS_SLOW);
+        Fake::now = 1200; led.update(); assert(Fake::ledLevel == HIGH);
+        Fake::now = 1800; led.update(); assert(Fake::ledLevel == LOW);
+    });
+    check("SNTP waits for IPv4, logs both DNS controls and starts exactly once", [] {
+        ClockDiagnostics clock;
+        Fake::now = 10;
+        clock.update(Fake::now, false, false, 0, false);
+        clock.update(Fake::now, true, false, 0, false);
+        clock.update(Fake::now, true, true, 0, true);
+        assert(Fake::sntpConfigCalls == 0 && Fake::dnsCalls == 0);
+        clock.update(Fake::now, true, true, 0, false);
+        assert(Fake::sntpConfigCalls == 1 && Fake::dnsCalls == 2);
+        assert(hasLog("sntp=STARTED | after_ipv4=1"));
+        assert(hasLog("[clock-dns] host=time.cloudflare.com | result=PASS"));
+        assert(hasLog("[clock-dns] host=pool.ntp.org | result=PASS"));
+        assert(hasLog("epoch=0 | ready=NO"));
+        assert(hasLog("udp123=UNVERIFIED"));
+        clock.update(Fake::now + 500, true, true, 0, false);
+        assert(Fake::sntpConfigCalls == 1 && Fake::dnsCalls == 2);
+    });
+    check("Clock reports waiting every ten seconds and recovery immediately", [] {
+        ClockDiagnostics clock;
+        clock.update(100, true, true, 0, false);
+        const auto count = Fake::logs.size();
+        clock.update(9999, true, true, 0, false);
+        assert(Fake::logs.size() == count);
+        clock.update(10200, true, true, 0, false);
+        assert(Fake::logs.size() == count + 1);
+        clock.update(10300, true, true, 1900000000, false);
+        assert(Fake::logs.size() == count + 2);
+        assert(hasLog("epoch=1900000000 | ready=YES"));
+        assert(Fake::sntpConfigCalls == 1);
+    });
+    check("Clock returns to waiting after Wi-Fi loss and reinitializes once", [] {
+        ClockDiagnostics clock;
+        clock.update(100, true, true, 0, false);
+        clock.update(200, false, false, 0, false);
+        assert(hasLog("state=LINK_DOWN_OR_NO_IP"));
+        clock.update(300, true, false, 0, false);
+        assert(Fake::sntpConfigCalls == 1);
+        clock.update(400, true, true, 0, false);
+        assert(Fake::sntpConfigCalls == 2);
+        assert(Fake::dnsCalls == 4);
+    });
+    check("Clock DNS failure remains a DNS observation, not UDP proof", [] {
+        ClockDiagnostics clock;
+        Fake::controlDns = false;
+        clock.update(100, true, true, 0, false);
+        assert(hasLog("[clock-dns] host=pool.ntp.org | result=FAIL"));
+        assert(hasLog("udp123=NOT_TESTED"));
+        assert(hasLog("epoch=0 | ready=NO"));
     });
     check("Wi-Fi loss is local, never SSH path failure or eligible sample", [] {
         QualityWindow window;

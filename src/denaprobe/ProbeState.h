@@ -84,11 +84,11 @@ CurrentState currentState(uint32_t now, bool wifiConnected) const {
         state.led = LedMode::HTTPS_SLOW;
     } else if (state.https == PublicHttpsState::ENDPOINT_FAILURE) {
         state.led = LedMode::HTTPS_FAILURE;
-    } else if (state.https == PublicHttpsState::PASS ||
-               state.https == PublicHttpsState::CHECK_DISABLED) {
-        state.led = LedMode::SSH_READY;
     } else {
-        state.led = LedMode::UNKNOWN;
+        // A fresh SSH SERVICE_ACCEPT_PASS is the primary LED health signal.
+        // Missing, stale or unmeasurable HTTPS (including NTP not ready)
+        // is not evidence of an SSH failure.
+        state.led = LedMode::SSH_READY;
     }
     return state;
 }

@@ -9,7 +9,8 @@ DenaProbe is a small hardware research project for comparing healthy and disrupt
 **R1 update (2026-10-30):** SSH/HTTPS events are separated. Source-side HTTPS
 deadlines and Wi-Fi/DNS fault classification are hardened, with 30 deterministic
 host cases and pinned dual-target CI. Path, Wi-Fi and trust failures are counted
-separately. R1 hardware validation remains pending;
+separately. An additional 7 host cases cover SNTP diagnostics after IPv4
+and primary-SSH LED states (37 total). R1 hardware validation remains pending;
 see the [R1 validation runbook](docs/009-R1-CORE-REFACTOR.md).
 
 ## Phase boundaries
