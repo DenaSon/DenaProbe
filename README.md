@@ -7,8 +7,9 @@ DenaProbe is a small hardware research project for comparing healthy and disrupt
 > **Current experimental branch status (2026-10-29):** Phase 1B.4 SSH feasibility firmware was successfully built, flashed and observed on an ESP32; one 12/12 SSH PASS window and independent 64 KiB HTTPS PASS samples were captured. Controlled failure-pattern validation is still pending. **DPT/1 is a documented, not yet implemented telemetry contract.** No NVLBot ingest, VPN/NPV authentication, filtering classifier or production alert service exists. Older v0.0.x sections below are historical and describe their own testing state.
 
 **R1 update (2026-10-30):** SSH/HTTPS events are separated. Source-side HTTPS
-deadlines and Wi-Fi/DNS fault classification are hardened, with 26 deterministic
-host cases and pinned dual-target CI. R1 hardware validation remains pending;
+deadlines and Wi-Fi/DNS fault classification are hardened, with 30 deterministic
+host cases and pinned dual-target CI. Path, Wi-Fi and trust failures are counted
+separately. R1 hardware validation remains pending;
 see the [R1 validation runbook](docs/009-R1-CORE-REFACTOR.md).
 
 ## Phase boundaries
