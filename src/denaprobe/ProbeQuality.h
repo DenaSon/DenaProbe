@@ -6,10 +6,11 @@
 namespace DenaProbe {
 const char *codeName(Code code); // Implemented in ProbeDiagnostics.h.
 int32_t elapsedDifference(int32_t endMs, int32_t startMs); // Signed stage delta or NOT_MEASURED.
-bool eligibleForAvailability(Code code) {
+// Only completed measurements of the remote SSH path belong in its
+// availability denominator. Wi-Fi association loss is local to this device.
+bool eligibleForPathAvailability(Code code) {
     switch (code) {
         case Code::PASS:
-        case Code::WIFI_LOST:
         case Code::DNS_FAIL:
         case Code::SSH_CONNECT_TIMEOUT:
         case Code::SSH_CONNECT_ERROR:
@@ -17,10 +18,19 @@ bool eligibleForAvailability(Code code) {
         case Code::SERVICE_REQUEST_ERROR:
             return true;
         default:
-            // Local allocation errors and host-key trust failures are NOT
-            // counted as network availability loss.
             return false;
     }
+}
+
+bool isLocalProbeFailure(Code code) {
+    return code == Code::WIFI_LOST ||
+           code == Code::SESSION_ALLOC_FAILED ||
+           code == Code::SSH_OPTIONS_FAILED;
+}
+
+bool isHostKeyTrustFailure(Code code) {
+    return code == Code::HOST_KEY_ERROR ||
+           code == Code::HOST_KEY_MISMATCH;
 }
 
 void sortLatencies(uint32_t *samples, uint8_t size) {
@@ -92,17 +102,21 @@ void recordAndPrint(const Result &result) {
     uint32_t service[kQualityWindowSamples]{};
     uint8_t passCount = 0;
     uint8_t validCount = 0;
-    uint8_t networkFailures = 0;
+    uint8_t networkFailures = 0; // Remote DNS / SSH path only, never local Wi-Fi.
     uint8_t wifiFailures = 0;
-    uint8_t excludedCount = 0;
+    uint8_t localFailures = 0;
+    uint8_t trustFailures = 0;
+    uint8_t excludedCount = 0; // Local + trust: excluded from path denominator.
     for (uint8_t i = 0; i < qualityCount; ++i) {
         const QualitySample &sample = qualityHistory[i];
-        if (!eligibleForAvailability(sample.code)) {
+        if (sample.code == Code::WIFI_LOST) ++wifiFailures;
+        if (isLocalProbeFailure(sample.code)) ++localFailures;
+        if (isHostKeyTrustFailure(sample.code)) ++trustFailures;
+        if (!eligibleForPathAvailability(sample.code)) {
             ++excludedCount;
             continue;
         }
         ++validCount;
-        if (sample.code == Code::WIFI_LOST) ++wifiFailures;
         if (sample.code != Code::PASS) {
             ++networkFailures;
             continue;
@@ -142,6 +156,7 @@ void recordAndPrint(const Result &result) {
     Serial.printf(
         "[quality-window] seq=%lu | window=%u/%u | eligible=%u | "
         "pass=%u | network_failures=%u | wifi_lost=%u | "
+        "local_failures=%u | trust_failures=%u | "
         "wifi_down_events_since_boot=%lu | excluded=%u | "
         "transport_p50_ms=%ld | transport_p90_ms=%ld | "
         "transport_spread_ms=%ld | dns_p50_ms=%ld | service_p50_ms=%ld | "
@@ -154,6 +169,8 @@ void recordAndPrint(const Result &result) {
         static_cast<unsigned int>(passCount),
         static_cast<unsigned int>(networkFailures),
         static_cast<unsigned int>(wifiFailures),
+        static_cast<unsigned int>(localFailures),
+        static_cast<unsigned int>(trustFailures),
         static_cast<unsigned long>(wifiDownTransitions),
         static_cast<unsigned int>(excludedCount),
         static_cast<long>(medianTransport),
