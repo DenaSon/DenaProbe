@@ -1,6 +1,6 @@
 # DenaProbe R1 — Core Refactor and Hardware Validation
 
-**Branch:** `feature/r1-core-refactor-20261029` · **Status (2026-10-30):** source hardening and 26 deterministic host cases complete; ESP32 regression sign-off remains pending. Check the PR's exact-head CI for both firmware builds. **No master merge.**
+**Source:** R1 experimental firmware (`esp32dev_ssh_feasibility`) · **Status (2026-10-30):** source hardening and 30 deterministic host cases; ESP32 regression sign-off remains pending. Code may be integrated to `master` before field acceptance by owner request; this is **not** hardware or production sign-off. Check exact-head CI for both firmware builds.
 
 ## Scope
 
@@ -82,6 +82,27 @@ the independent DNS control. A disconnected hotspot yields `WIFI_LOST`; no
 second lookup or SSH session starts when the link is already known down. An
 actual resolver failure with Wi-Fi still connected retains `DNS_FAIL`.
 
+### Quality window: local and remote failures are separate
+
+`[quality-window]` preserves the existing `eligible`, `network_failures`,
+`wifi_lost` and `excluded` keys for compatibility, but explicitly corrects
+their counting semantics:
+
+- `eligible` includes only completed SSH-path outcomes (PASS, DNS fail,
+  transport failure/timeout, or service request failure/timeout).
+- `network_failures` includes only failed **eligible SSH path** samples.
+  `WIFI_LOST` must never increment it or the eligible denominator.
+- `wifi_lost` counts local hotspot link-loss samples, and `local_failures`
+  counts those plus local allocation / SSH-option errors.
+- `trust_failures` counts host-key unavailable/mismatch separately.
+  `excluded` includes all local and trust failures.
+- Rolling counts represent only the last 12 SSH samples. No counter is a
+  carrier-filtering verdict, and no SSH-authentication or NPV path is tested.
+
+Four extra deterministic cases verify Wi-Fi-only, mixed SSH/Wi-Fi, trust/resource
+errors, and 12-sample eviction. The classification changes are serial-only;
+DPT/1 wire interpretation and backend alerting remain future R2 work.
+
 ### Build and host regression coverage
 
 The build is pinned to PlatformIO **6.2.0** in CI, platform **espressif32 8.0.0**,
@@ -93,7 +114,7 @@ for pushes to `master` / `feature/**`, with host tests preceding both builds.
 python tests/run_host_tests.py
 ```
 
-The 26 deterministic host cases compile the real R1 entrypoint/modules against
+The 30 deterministic host cases compile the real R1 entrypoint/modules against
 fake peripherals. They cover silent fixed/unknown-length bodies, stalled chunk
 headers, slow-drip headers/body, successful/slow/short/oversize samples, TLS
 rejection, DNS and mid-body Wi-Fi loss, host-key rejection, SSH/service timeout,
@@ -114,7 +135,8 @@ Build both environments and compare baseline semantics. The repository's R1 buil
 ```powershell
 cd D:\denaProbe\DenaProbe
 git fetch
-git switch feature/r1-core-refactor-20261029
+git switch master
+git pull --ff-only
 pio run -e esp32dev
 pio run -e esp32dev_ssh_feasibility
 ```
@@ -133,5 +155,5 @@ No private `include/probe_private.h` is committed; local hardware configuration 
 8. With a controlled test response, stall body/chunk delivery while TCP stays open. Expect `BODY_ERROR`, `deadline_exceeded=1`, a completed HTTPS event and another SSH cycle. Dripped headers must terminate within their response budget. If temporarily changing the HTTPS fixture endpoint, use a matching trusted CA and hostname; never disable verification. Restore the real endpoint before deployment.
 9. Watch heap, largest block, watchdog, 30s cadence and long-run stability. On a genuine worker stall, further probes must be disabled; do **not** automatically delete a crypto worker. Record the tested firmware commit and synchronized Serial / NPV reference observations.
 
-**Do not merge** before successful compile and the above field tests. This refactor is not DPT/1 telemetry transport R2 or VPN data-path probing.
+**Release gate:** code-only integration to master is permitted once automated checks pass; the field tests above remain mandatory **before declaring R1 hardware-validated or activating remote/production telemetry**. Do not confuse a successful build with operational acceptance. This refactor is not DPT/1 telemetry transport R2 or VPN data-path probing.
 
