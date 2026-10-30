@@ -50,6 +50,7 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 - [Healthy MCI baseline runbook](docs/003-HEALTHY-BASELINE-RUNBOOK.md)
 - [SSH feasibility and hardware field observations](docs/007-SSH-FEASIBILITY-SPIKE.md)
 - [R1 refactor, review fixes and hardware validation](docs/009-R1-CORE-REFACTOR.md)
+- [R1 hardware field-test observations, 2026-10-30](docs/010-R1-HARDWARE-FIELD-TESTS-2026-10-30.md)
 - **[DPT/1 cross-platform telemetry contract](docs/008-DPT-TELEMETRY-CONTRACT-V1.md)** ([codes](contracts/dpt/v1/code-registry.json) · [JSON Schema](contracts/dpt/v1/telemetry.schema.json) · [fixtures](contracts/dpt/v1/fixtures.json)) — documentation only; firmware/NVLBot integration pending.
 
 ## Public repository safety
