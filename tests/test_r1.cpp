@@ -1,5 +1,7 @@
 #include "../src/ssh_feasibility_main.cpp"
 #include <iostream>
+#include <initializer_list>
+#include <string>
 
 namespace {
 unsigned tests = 0;
@@ -13,6 +15,19 @@ void bodyTimeout(Fake::Response response, int length) {
     assert(r.status == HttpsQuality::Status::BODY_ERROR);
     assert(r.deadlineExceeded && Fake::stops == 1);
     assert(Fake::now >= 12000 && Fake::now < 13500);
+}
+void addQualitySamples(QualityWindow &window, Code code, unsigned count) {
+    Result sample{};
+    sample.code = code;
+    for (unsigned i = 0; i < count; ++i) window.recordAndPrint(sample);
+}
+void expectQualityTokens(std::initializer_list<const char *> tokens) {
+    assert(!Fake::logs.empty());
+    const std::string &line = Fake::logs.back();
+    assert(line.find("[quality-window]") != std::string::npos);
+    for (const char *token : tokens) {
+        assert(line.find(token) != std::string::npos);
+    }
 }
 void resetOrchestration() {
     scheduler = {}; probeState = {}; quality = {}; eventQueue.begin();
@@ -142,6 +157,42 @@ int main() {
         assert(s.currentState(360000, false).led == LedMode::WIFI_DOWN);
         s.lastSshCode = Code::WIFI_LOST;
         assert(s.currentState(360000, true).ssh == SshPathState::LOCAL_UNMEASURABLE);
+    });
+    check("Wi-Fi loss is local, never SSH path failure or eligible sample", [] {
+        QualityWindow window;
+        addQualitySamples(window, Code::WIFI_LOST, 4);
+        expectQualityTokens({"eligible=0 | pass=0 | network_failures=0",
+                             "wifi_lost=4 | local_failures=4 | trust_failures=0",
+                             "excluded=4", "ssh_latency_flag=COLLECTING"});
+    });
+    check("Mixed path failures and Wi-Fi losses have distinct counters", [] {
+        QualityWindow window;
+        addQualitySamples(window, Code::PASS, 4);
+        addQualitySamples(window, Code::WIFI_LOST, 2);
+        addQualitySamples(window, Code::DNS_FAIL, 1);
+        addQualitySamples(window, Code::SERVICE_ACCEPT_TIMEOUT, 1);
+        expectQualityTokens({"eligible=6 | pass=4 | network_failures=2",
+                             "wifi_lost=2 | local_failures=2 | trust_failures=0",
+                             "excluded=2", "ssh_latency_flag=PATH_FAILURES_OBSERVED"});
+    });
+    check("Host-key trust and resource failures cannot inflate path outages", [] {
+        QualityWindow window;
+        addQualitySamples(window, Code::PASS, 4);
+        addQualitySamples(window, Code::HOST_KEY_MISMATCH, 1);
+        addQualitySamples(window, Code::HOST_KEY_ERROR, 1);
+        addQualitySamples(window, Code::SSH_OPTIONS_FAILED, 1);
+        addQualitySamples(window, Code::SESSION_ALLOC_FAILED, 1);
+        expectQualityTokens({"eligible=4 | pass=4 | network_failures=0",
+                             "wifi_lost=0 | local_failures=2 | trust_failures=2",
+                             "excluded=4", "ssh_latency_flag=BASELINE_NOT_CALIBRATED"});
+    });
+    check("Rolling window evicts old local losses without manufacturing failures", [] {
+        QualityWindow window;
+        addQualitySamples(window, Code::WIFI_LOST, kQualityWindowSamples);
+        addQualitySamples(window, Code::PASS, 1);
+        expectQualityTokens({"window=12/12 | eligible=1 | pass=1 | network_failures=0",
+                             "wifi_lost=11 | local_failures=11 | trust_failures=0",
+                             "excluded=11", "ssh_latency_flag=COLLECTING"});
     });
     check("Worker emits SSH first, finishes once and allows next probe after HTTPS timeout", [] {
         resetOrchestration(); workerRunHttps = workerRunning = true;
