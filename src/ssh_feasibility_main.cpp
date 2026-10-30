@@ -3,6 +3,7 @@
 // Separate SSH/HTTPS events share a serialized worker to protect ESP32 heap.
 #include <Arduino.h>
 #include <WiFi.h>
+#include <time.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -27,6 +28,7 @@
 #include "denaprobe/ProbeScheduler.h"
 #include "denaprobe/ProbeEvents.h"
 #include "denaprobe/ProbeState.h"
+#include "denaprobe/ClockDiagnostics.h"
 #include "denaprobe/StatusLed.h"
 #include "denaprobe/ProbeQuality.h"
 #include "denaprobe/ProbeDiagnostics.h"
@@ -37,6 +39,7 @@ using namespace DenaProbe;
 ProbeEventQueue eventQueue;
 ProbeScheduler scheduler;
 ProbeState probeState;
+ClockDiagnostics clockDiagnostics;
 StatusLed statusLed;
 QualityWindow quality;
 bool workerRunning = false;
@@ -131,7 +134,7 @@ void setup() {
     statusLed.begin();
     statusLed.update();
     Serial.println("=== DenaProbe | R1 separated SSH/HTTPS events (experimental) ===");
-    Serial.println("[led-map] solid=SSH_PASS+HTTPS_PASS_OR_DISABLED | "
+    Serial.println("[led-map] solid=SSH_PASS_UNLESS_HTTPS_SLOW_OR_FAILED | "
                    "long_on_short_off=HTTPS_SLOW | triple_flash=HTTPS_ENDPOINT_FAILURE | "
                    "double_flash=SSH_FAILURE | half_second_pulse=UNMEASURED | "
                    "one_second_blink=WIFI_DOWN | vpn_health=NOT_TESTED");
@@ -178,9 +181,7 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);
     connectWiFi();
-    if (PROBE_HTTPS_QUALITY_ENABLED) {
-        configTime(0, 0, "time.cloudflare.com", "pool.ntp.org");
-    }
+    // Clock diagnostics initialize SNTP later, after WL_CONNECTED + IPv4.
 }
 
 void loop() {
@@ -204,6 +205,15 @@ void loop() {
 
     ProbeEvent event{};
     if (eventQueue.receive(event)) consumeEvent(event);
+
+    if (PROBE_HTTPS_QUALITY_ENABLED) {
+        const bool up = WiFi.status() == WL_CONNECTED;
+        // DHCP must have assigned a usable IPv4 before SNTP setup.
+        const bool ipv4Ready = up && WiFi.localIP()[0] != 0;
+        clockDiagnostics.update(millis(), up, ipv4Ready,
+                                static_cast<int64_t>(time(nullptr)),
+                                workerRunning);
+    }
 
     if (WiFi.status() != WL_CONNECTED) {
         if (now - lastWiFiAttemptMs >= DenaProbe::kRetryWiFiMs) {
