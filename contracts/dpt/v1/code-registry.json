@@ -1,0 +1,83 @@
+{
+  "protocol": "DPT",
+  "version": 1,
+  "policy": "Codes are immutable once released; never derive wire values from C++ enum ordinals",
+  "namespaces": {
+    "event": {
+      "1": "PROBE_RESULT",
+      "2": "DEVICE_EVENT",
+      "3": "BOOT"
+    },
+    "wifi": {
+      "0": "DOWN",
+      "1": "UP",
+      "2": "UNKNOWN"
+    },
+    "ssh": {
+      "0": "NOT_TESTED",
+      "1": "SERVICE_ACCEPT_PASS",
+      "10": "WIFI_DISCONNECTED",
+      "20": "DNS_FAIL",
+      "30": "SSH_TRANSPORT_TIMEOUT",
+      "31": "SSH_TRANSPORT_ERROR",
+      "40": "HOST_KEY_UNAVAILABLE",
+      "41": "HOST_KEY_MISMATCH",
+      "50": "SERVICE_ACCEPT_TIMEOUT",
+      "51": "SERVICE_REQUEST_ERROR",
+      "90": "RESOURCE_EXHAUSTED",
+      "91": "SSH_OPTIONS_ERROR",
+      "92": "WORKER_STALLED",
+      "93": "CONFIG_INVALID",
+      "94": "QUEUE_ALLOC_FAILED",
+      "95": "TASK_ALLOC_FAILED",
+      "96": "WIFI_LINK_EVENT"
+    },
+    "stage": {
+      "0": "UNDETERMINED",
+      "10": "WIFI",
+      "20": "DNS",
+      "21": "SSH_INIT",
+      "30": "TCP_OR_SSH_BANNER_UNKNOWN",
+      "31": "BANNER_OBSERVED",
+      "32": "WAIT_SERVER_KEXINIT",
+      "33": "KEX_NEGOTIATION",
+      "34": "KEX_OR_NEWKEYS_UNKNOWN",
+      "35": "NEWKEYS_PROCESSING_UNKNOWN",
+      "40": "HOST_KEY",
+      "50": "SERVICE_REQUEST_OR_ACCEPT",
+      "51": "WAIT_SERVICE_ACCEPT",
+      "52": "SERVICE_ACCEPT_RECEIVED",
+      "90": "LOCAL"
+    },
+    "https": {
+      "0": "NOT_TESTED",
+      "1": "PASS",
+      "2": "SLOW_64K_SAMPLE_SUSPECT",
+      "10": "WIFI_DOWN",
+      "11": "CLOCK_NOT_READY",
+      "12": "LOW_MEMORY",
+      "20": "DNS_FAIL",
+      "30": "TLS_OR_CONNECT_FAIL",
+      "31": "HTTP_SETUP_FAIL",
+      "32": "HTTP_STATUS_ERROR",
+      "40": "BODY_ERROR",
+      "41": "BODY_TOO_LARGE",
+      "42": "BODY_INCOMPLETE"
+    },
+    "observation_bits": {
+      "0": "BANNER_PARSED",
+      "1": "KEXINIT_LOCAL_TX_PROGRESS",
+      "2": "KEXINIT_PEER_RX_PROGRESS",
+      "3": "KEX_ALGORITHMS_NEGOTIATED",
+      "4": "NEWKEYS_RX_OBSERVED_UNVALIDATED",
+      "5": "SSH_TRANSPORT_VERIFIED",
+      "6": "HOST_KEY_SHA256_PIN_VERIFIED",
+      "7": "SERVICE_ACCEPT_RECEIVED"
+    },
+    "ack": {
+      "0": "ACCEPTED",
+      "1": "DUPLICATE",
+      "2": "HISTORY_ONLY"
+    }
+  }
+}

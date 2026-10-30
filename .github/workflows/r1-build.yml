@@ -1,0 +1,39 @@
+name: R1 ESP32 checks
+on:
+  push:
+    branches:
+      - master
+      - 'feature/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: R1 deterministic failure-path tests
+        run: python tests/run_host_tests.py
+  platformio:
+    needs: host-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install "platformio==6.2.0"
+      - name: Compile legacy default firmware (regression)
+        run: pio run -e esp32dev
+      - name: Compile isolated R1 SSH feasibility firmware
+        run: pio run -e esp32dev_ssh_feasibility
+

@@ -1,0 +1,14 @@
+{
+  "description": "PUBLIC TEST VECTOR ONLY, NEVER A PROVISIONED DEVICE SECRET. Input body must be signed as exact UTF-8 bytes with no trailing newline.",
+  "protocol": "DPT/1",
+  "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "headers": {
+    "X-DPT-Device": "dp-lte-01",
+    "X-DPT-Key-Id": "k1",
+    "X-DPT-Sent-Uptime-Ms": "453500"
+  },
+  "raw_body": "{\"v\":1,\"id\":\"dp-lte-01\",\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"u\":453000,\"k\":1,\"t\":1,\"w\":1,\"r\":-39,\"s\":1,\"p\":52,\"o\":255,\"d\":1,\"x\":3298,\"a\":198}",
+  "body_sha256_hex": "79a60b9ea4807af5edc542105a25b119f7b4f93b8c257599f1ee847b1db145d3",
+  "string_to_sign": "DPT1\nPOST\n/api/dpt/v1/telemetry\ndp-lte-01\nk1\n453500\n79a60b9ea4807af5edc542105a25b119f7b4f93b8c257599f1ee847b1db145d3",
+  "expected_signature_base64url": "FvC6ftohQqvxpjiMdAQx-nCdsU3NccQdfZQKBGQpoBA"
+}
