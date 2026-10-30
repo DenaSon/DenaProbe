@@ -150,6 +150,8 @@ necessary. Test-only public fixtures in `tests/stubs/` never enter firmware.
 DPT/1 independent HTTPS wire events, serializer, API delivery and notifications
 remain later work. This R1 change does not alter their schema or implement them.
 
+**Field evidence (2026-10-30):** Operator-tested Wi-Fi hotspot OFF/ON (automatic reconnection succeeded), and mobile-data OFF while Wi-Fi remained associated (Edge and independent control DNS both failed). Two transient SSH SERVICE_ACCEPT timeouts followed Wi-Fi recovery; mobile-data restoration and actual filtering are not yet independently verified. See [R1 hardware field-test results](010-R1-HARDWARE-FIELD-TESTS-2026-10-30.md) for timestamps, acceptance bounds and overnight comparison requirements.
+
 ## Release checklist — automated
 
 Build both environments and compare baseline semantics. The repository's R1 build workflow compiles both targets:
