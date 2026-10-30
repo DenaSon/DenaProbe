@@ -152,6 +152,8 @@ remain later work. This R1 change does not alter their schema or implement them.
 
 **Field evidence (2026-10-30):** Operator-tested Wi-Fi hotspot OFF/ON (automatic reconnection succeeded), and mobile-data OFF while Wi-Fi remained associated (Edge and independent control DNS both failed). Two transient SSH SERVICE_ACCEPT timeouts followed Wi-Fi recovery; mobile-data restoration and actual filtering are not yet independently verified. See [R1 hardware field-test results](010-R1-HARDWARE-FIELD-TESTS-2026-10-30.md) for timestamps, acceptance bounds and overnight comparison requirements.
 
+**Field progress (2026-10-30):** Wi-Fi outage and automatic recovery were observed on ESP32. A separate mobile-data-off experiment produced Edge DNS and independent control DNS failures while the hotspot Wi-Fi remained connected. Two transient SSH SERVICE_ACCEPT timeouts followed Wi-Fi recovery. Mobile-data restoration and a matched real-world filtering event are still unverified. See [R1 field-test evidence](010-R1-HARDWARE-FIELD-TESTS-2026-10-30.md).
+
 ## Release checklist — automated
 
 Build both environments and compare baseline semantics. The repository's R1 build workflow compiles both targets:
