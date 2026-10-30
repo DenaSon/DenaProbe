@@ -13,6 +13,9 @@
 namespace Fake {
 inline uint32_t now = 0;
 inline bool wifi = true;
+inline bool ipReady = true;
+inline int sntpConfigCalls = 0;
+inline int ledLevel = -1;
 inline uint32_t dropAt = UINT32_MAX;
 inline int dnsCalls = 0, dropOnDns = 0;
 inline bool edgeDns = true, controlDns = true;
@@ -36,7 +39,8 @@ inline void tick(uint32_t ms = 1) {
     if (dropAt != UINT32_MAX && now >= dropAt) wifi = false;
 }
 inline void reset() {
-    now = 0; wifi = true; dropAt = UINT32_MAX;
+    now = 0; wifi = true; ipReady = true; sntpConfigCalls = 0;
+    ledLevel = -1; dropAt = UINT32_MAX;
     dnsCalls = dropOnDns = connects = stops = serviceCalls = 0;
     edgeDns = controlDns = tlsConnect = true; badPin = false;
     tlsHostname.clear(); tlsRoot.clear(); heap = 200000; largest = 100000;
@@ -50,7 +54,7 @@ inline uint32_t millis() { return Fake::now; }
 inline void delay(uint32_t ms) { Fake::tick(ms); }
 constexpr int HIGH = 1, LOW = 0, OUTPUT = 1;
 inline void pinMode(int, int) {}
-inline void digitalWrite(int, int) {}
+inline void digitalWrite(int, int level) { Fake::ledLevel = level; }
 struct SerialStub {
     void begin(int) {}
     void println(const char *s) { Fake::logs.emplace_back(s); }
