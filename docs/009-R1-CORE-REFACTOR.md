@@ -82,6 +82,28 @@ the independent DNS control. A disconnected hotspot yields `WIFI_LOST`; no
 second lookup or SSH session starts when the link is already known down. An
 actual resolver failure with Wi-Fi still connected retains `DNS_FAIL`.
 
+### Clock diagnostics and primary SSH LED indication
+
+R1 initializes SNTP only **after** Wi-Fi association and a nonzero local IPv4
+address. It performs one DNS resolution check for each configured NTP hostname
+per Wi-Fi connection, and logs `[clock-dns]` separately. A DNS PASS proves only
+name resolution; UDP/123 exchange is **not** measured by these probes. Do not
+claim UDP blocking or filtering without independent evidence. `[clock]`
+reports the Unix epoch and `ready=YES|NO` every 10 seconds while not ready,
+on readiness transition, then approximately every 60 seconds. No blocking
+wait for time, no clock fallback, and no relaxation of TLS verification.
+After a Wi-Fi disconnect/reconnect, SNTP is configured again only once the IP
+is restored. These log lines are intentionally short and do not reveal the
+hotspot credentials.
+
+The onboard GPIO2 LED is now **solid ON for a fresh SSH SERVICE_ACCEPT_PASS**
+unless a fresh HTTPS measurement reports SLOW (long ON/short OFF) or endpoint
+FAILURE (triple flash). HTTPS NOT_TESTED, CLOCK_NOT_READY, LOW_MEMORY,
+UNMEASURABLE and STALE do not obscure healthy SSH: solid ON. Wi-Fi down always
+blinks slowly; SSH path failure double flashes; missing/stale SSH stays
+UNKNOWN. Solid LED is *not* a VPN login, NPV traffic, or filtering verdict.
+30-second SSH / 180-second HTTPS scheduling and existing patterns remain.
+
 ### Quality window: local and remote failures are separate
 
 `[quality-window]` preserves the existing `eligible`, `network_failures`,
@@ -114,7 +136,7 @@ for pushes to `master` / `feature/**`, with host tests preceding both builds.
 python tests/run_host_tests.py
 ```
 
-The 30 deterministic host cases compile the real R1 entrypoint/modules against
+The 37 deterministic host cases compile the real R1 entrypoint/modules against
 fake peripherals. They cover silent fixed/unknown-length bodies, stalled chunk
 headers, slow-drip headers/body, successful/slow/short/oversize samples, TLS
 rejection, DNS and mid-body Wi-Fi loss, host-key rejection, SSH/service timeout,
@@ -147,13 +169,14 @@ No private `include/probe_private.h` is committed; local hardware configuration 
 
 1. Flash **experimental environment only**: `pio run -e esp32dev_ssh_feasibility -t upload`.
 2. Start Monitor with durable file logging: `pio device monitor -b 115200 -f time -f log2file`.
-3. Validate at least 12 consecutive SSH results; `[quality-sample] seq` increments once per **SSH** result, not HTTPS. Historical 30s start cadence should remain approximately stable.
-4. On each 180s HTTPS cycle, confirm SSH `[probe-event] type=SSH_RESULT` and `[ssh-deep] END` arrive **before** HTTPS `[probe-event] type=HTTPS_RESULT` and `[https-quality]`.
-5. Confirm independently new HTTPS samples: `https_new_sample=1` **only** on the HTTPS result, never on the preceding SSH result. Stale previously measured HTTPS must carry its original seq and age; never recast as new.
-6. Trigger Wi-Fi loss/recovery; confirm only Wi-Fi / local status, not asserted operator filtering; catch `workerFinished` lifecycle, no overlapping probes or crash.
-7. Test SSH endpoint outage, invalid host key (must fail closed), post-transport service failure and HTTPS slow/error separately. Confirm LED modes and `filtering_verdict=INCONCLUSIVE`. During DNS, switch off the hotspot and check `WIFI_DISCONNECTED`, not `DNS_FAIL`.
-8. With a controlled test response, stall body/chunk delivery while TCP stays open. Expect `BODY_ERROR`, `deadline_exceeded=1`, a completed HTTPS event and another SSH cycle. Dripped headers must terminate within their response budget. If temporarily changing the HTTPS fixture endpoint, use a matching trusted CA and hostname; never disable verification. Restore the real endpoint before deployment.
-9. Watch heap, largest block, watchdog, 30s cadence and long-run stability. On a genuine worker stall, further probes must be disabled; do **not** automatically delete a crypto worker. Record the tested firmware commit and synchronized Serial / NPV reference observations.
+3. Confirm `[clock]` starts after Wi-Fi IPv4 is ready, shows actual `epoch`, and either transitions to `ready=YES` or documents `ready=NO` with `[clock-dns]` observations. DNS success alone does not verify UDP/123. Confirm SSH PASS + CLOCK_NOT_READY yields `led=SSH_READY` and solid blue GPIO2; keep TLS CA verification enabled.
+4. Validate at least 12 consecutive SSH results; `[quality-sample] seq` increments once per **SSH** result, not HTTPS. Historical 30s start cadence should remain approximately stable.
+5. On each 180s HTTPS cycle, confirm SSH `[probe-event] type=SSH_RESULT` and `[ssh-deep] END` arrive **before** HTTPS `[probe-event] type=HTTPS_RESULT` and `[https-quality]`.
+6. Confirm independently new HTTPS samples: `https_new_sample=1` **only** on the HTTPS result, never on the preceding SSH result. Stale previously measured HTTPS must carry its original seq and age; never recast as new.
+7. Trigger Wi-Fi loss/recovery; confirm only Wi-Fi / local status, not asserted operator filtering; catch `workerFinished` lifecycle, no overlapping probes or crash.
+8. Test SSH endpoint outage, invalid host key (must fail closed), post-transport service failure and HTTPS slow/error separately. Confirm LED modes and `filtering_verdict=INCONCLUSIVE`. During DNS, switch off the hotspot and check `WIFI_DISCONNECTED`, not `DNS_FAIL`.
+9. With a controlled test response, stall body/chunk delivery while TCP stays open. Expect `BODY_ERROR`, `deadline_exceeded=1`, a completed HTTPS event and another SSH cycle. Dripped headers must terminate within their response budget. If temporarily changing the HTTPS fixture endpoint, use a matching trusted CA and hostname; never disable verification. Restore the real endpoint before deployment.
+10. Watch heap, largest block, watchdog, 30s cadence and long-run stability. On a genuine worker stall, further probes must be disabled; do **not** automatically delete a crypto worker. Record the tested firmware commit and synchronized Serial / NPV reference observations.
 
 **Release gate:** code-only integration to master is permitted once automated checks pass; the field tests above remain mandatory **before declaring R1 hardware-validated or activating remote/production telemetry**. Do not confuse a successful build with operational acceptance. This refactor is not DPT/1 telemetry transport R2 or VPN data-path probing.
 
