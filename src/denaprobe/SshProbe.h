@@ -113,6 +113,12 @@ Result runSshTransport() {
     const uint32_t dnsStart = millis();
     const bool dnsOk = WiFi.hostByName(PROBE_EDGE_HOST, address) == 1;
     result.dnsMs = millis() - dnsStart;
+    // A resolver failure while the hotspot disappears is a local link loss.
+    // Recheck even on a cached DNS success before opening an SSH session.
+    if (WiFi.status() != WL_CONNECTED) {
+        result.code = Code::WIFI_LOST;
+        return result;
+    }
     if (!dnsOk) {
         // When the Edge hostname cannot be resolved, run an independent,
         // limited DNS-only control on the SAME hotspot resolver.
@@ -126,6 +132,10 @@ Result runSshTransport() {
         const bool controlOk =
             WiFi.hostByName("example.com", controlAddress) == 1;
         const uint32_t controlMs = millis() - controlStart;
+        if (WiFi.status() != WL_CONNECTED) {
+            result.code = Code::WIFI_LOST;
+            return result;
+        }
         const String dns1 = primaryDns.toString();
         const String dns2 = secondaryDns.toString();
         const String gw = gateway.toString();
@@ -247,3 +257,4 @@ Result runSshTransport() {
 }
 
 } // namespace DenaProbe
+

@@ -23,9 +23,10 @@ constexpr uint32_t kSshFreshnessMs = 3U * kProbeIntervalMs;
 constexpr uint32_t kHttpsFreshnessMs = 2U * kHttpsIntervalMs;
 constexpr uint32_t kConnectDeadlineMs = 12000;
 constexpr uint32_t kServiceDeadlineMs = 8000;
-constexpr uint32_t kTaskStalledMs = 55000; // Sequential SSH then HTTPS, separate result events.
+constexpr uint32_t kTaskStalledMs = 55000; // Per SSH/HTTPS phase; unexpected stall stays latched.
 constexpr uint32_t kWorkerStackBytes = 51200;
 constexpr uint32_t kRequiredHeapBeforeTask = 110000;
 constexpr uint8_t kLedPin = 2;  // ESP32 DEVKITV1 onboard blue LED, active HIGH
 
 } // namespace DenaProbe
+

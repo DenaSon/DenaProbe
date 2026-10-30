@@ -1,6 +1,6 @@
 # DenaProbe R1 — Core Refactor and Hardware Validation
 
-**Branch:** `feature/r1-core-refactor-20261029` · **Status:** implementation pending automated build and on-device regression sign-off · **No master merge.**
+**Branch:** `feature/r1-core-refactor-20261029` · **Status (2026-10-30):** source hardening and 26 deterministic host cases complete; ESP32 regression sign-off remains pending. Check the PR's exact-head CI for both firmware builds. **No master merge.**
 
 ## Scope
 
@@ -10,8 +10,9 @@ R1 is an internal structural refactor of the **isolated ESP32 feasibility target
 | --- | --- |
 | `ProbeConfig.h` | Historic cadence, timeouts, stack and heap constants |
 | `ProbeTypes.h` | Explicit SSH result, stage trace and independent UI states |
-| `SshProbe.h` | Unmodified libssh protocol experiment, callbacks and pinned SHA-256 verification |
-| `HttpsProbe.h` | Stable wrapper for existing verified, direct-hotspot Cloudflare sample |
+| `SshProbe.h` | libssh experiment and pinned SHA-256 verification; distinguish Wi-Fi loss during DNS |
+| `HttpsProbe.h` | Wrapper for direct-hotspot Cloudflare sample |
+| `DeadlineClient.h` | Close the HTTP source on response deadline or Wi-Fi loss, within its owning worker |
 | `ProbeScheduler.h` | Wrap-safe 30s/180s start-to-start timer, one active worker |
 | `ProbeEvents.h` | Typed SSH/HTTPS result events via fixed 2-element FreeRTOS queue |
 | `ProbeState.h` | Last-measurement freshness and separate SSH/public-HTTPS interpretations |
@@ -33,11 +34,11 @@ The probe worker remains **serial**: libssh and TLS are not concurrently active.
 ## Behavior preserved
 
 - SSH start-to-start cadence **30 s**, HTTPS schedule **180 s**.
-- SSH Transport deadline **12 s**, Service acceptance deadline **8 s**, worker stall cutoff **55 s**.
+- SSH Transport deadline **12 s**, Service acceptance deadline **8 s**.
 - Same strict pinned SHA-256 server public-key verification, no trust-on-first-use.
 - Same libssh observer return `SSH_PACKET_NOT_USED` and verified vs observed stage semantics.
 - No SSH login, no VPN data path, no Telegram update inference.
-- Same HTTP endpoint/CA/64 KiB limit/4s body slow threshold.
+- Same HTTP endpoint/CA/64 KiB limit/4s body slow threshold; response timeout enforcement is corrected below.
 - Same 12-probe rolling statistics, 90s SSH and 360s HTTPS freshness, and LED patterns.
 
 Intentional diagnostic differences:
@@ -46,6 +47,65 @@ Intentional diagnostic differences:
 - SSH resource measurements are taken at SSH completion instead of after optional HTTPS; therefore old/new heap watermarks are not identical measurement instants.
 - Explicit event completion uptime is used to track freshness, rather than console-processing time.
 - R1 does **not** claim to detect mobile carrier, NPV data path or filtering.
+
+## 2026-10-30 review fixes
+
+### Bounded HTTPS response, including silence
+
+The old sink-only 12-second check could not stop HTTPClient when the peer kept
+the connection open without delivering more body bytes or a chunk header.
+`DeadlineClient` now guards the **source** operations used by HTTPClient and
+Stream: `connected`, `available`, `read` and `peek`. It closes its own TLS socket
+and ends a pending Stream character wait when the deadline expires. A dripped
+byte does not renew the absolute deadline. No other task deletes the worker or
+closes its TLS objects.
+
+- Response headers: **20 s**, including TCP/TLS setup; TCP and TLS retain their
+  own **7 s** limits. Body: a separate **12 s** budget, starting after headers.
+- DNS remains the pinned framework's synchronous resolver; the response budgets
+  start **after** that lookup. They are not a guarantee for total probe duration.
+- TLS connects to the resolved IP using the framework's public overload that
+  also receives the **original hostname and CA**. SNI and certificate hostname
+  verification are preserved; this avoids resolving the same name a second time.
+- Timeout before headers maps to `TLS_OR_CONNECT_FAIL`; body timeout maps to
+  `BODY_ERROR`. Serial adds `deadline_exceeded=1` to identify the timeout.
+- Wi-Fi loss during HTTPS DNS/header/body processing maps to `WIFI_DOWN`.
+- The unexpected-worker-stall cutoff remains **55 s per phase**. Consuming the
+  SSH event starts the HTTPS phase budget using that event's completion time.
+  Two slow but completed phases no longer accumulate into a false stall. A
+  genuine stall stays latched and disables further probes until reset.
+
+### DNS failure classification
+
+SSH rechecks Wi-Fi after the Edge lookup (including a cached success) and after
+the independent DNS control. A disconnected hotspot yields `WIFI_LOST`; no
+second lookup or SSH session starts when the link is already known down. An
+actual resolver failure with Wi-Fi still connected retains `DNS_FAIL`.
+
+### Build and host regression coverage
+
+The build is pinned to PlatformIO **6.2.0** in CI, platform **espressif32 8.0.0**,
+Arduino framework package **4.30312.261024** (Arduino **3.3.12**) and SDK libraries
+**3.3.12**. libssh retains its original pinned commit. CI runs for every PR and
+for pushes to `master` / `feature/**`, with host tests preceding both builds.
+
+```sh
+python tests/run_host_tests.py
+```
+
+The 26 deterministic host cases compile the real R1 entrypoint/modules against
+fake peripherals. They cover silent fixed/unknown-length bodies, stalled chunk
+headers, slow-drip headers/body, successful/slow/short/oversize samples, TLS
+rejection, DNS and mid-body Wi-Fi loss, host-key rejection, SSH/service timeout,
+timer wrap, freshness, independent event order, no overlapping workers, next
+probe after HTTPS timeout and latched genuine stalls. The HTTP adapter models
+the relevant source access patterns; it does **not** validate the real TLS
+stack, HTTP parser, FreeRTOS scheduling or board heap. The two firmware builds
+check compatibility with the real pinned APIs; physical checks below remain
+necessary. Test-only public fixtures in `tests/stubs/` never enter firmware.
+
+DPT/1 independent HTTPS wire events, serializer, API delivery and notifications
+remain later work. This R1 change does not alter their schema or implement them.
 
 ## Release checklist — automated
 
@@ -69,7 +129,9 @@ No private `include/probe_private.h` is committed; local hardware configuration 
 4. On each 180s HTTPS cycle, confirm SSH `[probe-event] type=SSH_RESULT` and `[ssh-deep] END` arrive **before** HTTPS `[probe-event] type=HTTPS_RESULT` and `[https-quality]`.
 5. Confirm independently new HTTPS samples: `https_new_sample=1` **only** on the HTTPS result, never on the preceding SSH result. Stale previously measured HTTPS must carry its original seq and age; never recast as new.
 6. Trigger Wi-Fi loss/recovery; confirm only Wi-Fi / local status, not asserted operator filtering; catch `workerFinished` lifecycle, no overlapping probes or crash.
-7. Test SSH endpoint outage, invalid host key (must fail closed), post-transport service failure and HTTPS slow/error separately. Confirm LED modes and `filtering_verdict=INCONCLUSIVE`.
-8. Watch heap, largest block, watchdog, 30s cadence and long-run Stability. On Worker stall, further probes must be disabled; do **not** automatically delete a crypto worker.
+7. Test SSH endpoint outage, invalid host key (must fail closed), post-transport service failure and HTTPS slow/error separately. Confirm LED modes and `filtering_verdict=INCONCLUSIVE`. During DNS, switch off the hotspot and check `WIFI_DISCONNECTED`, not `DNS_FAIL`.
+8. With a controlled test response, stall body/chunk delivery while TCP stays open. Expect `BODY_ERROR`, `deadline_exceeded=1`, a completed HTTPS event and another SSH cycle. Dripped headers must terminate within their response budget. If temporarily changing the HTTPS fixture endpoint, use a matching trusted CA and hostname; never disable verification. Restore the real endpoint before deployment.
+9. Watch heap, largest block, watchdog, 30s cadence and long-run stability. On a genuine worker stall, further probes must be disabled; do **not** automatically delete a crypto worker. Record the tested firmware commit and synchronized Serial / NPV reference observations.
 
 **Do not merge** before successful compile and the above field tests. This refactor is not DPT/1 telemetry transport R2 or VPN data-path probing.
+

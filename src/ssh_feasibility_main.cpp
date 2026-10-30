@@ -86,6 +86,10 @@ void probeWorker(void *) {
 
 void consumeEvent(const ProbeEvent &event) {
     if (event.kind == ProbeEventKind::SSH_RESULT) {
+        // SSH completed: the remaining worker work is a separate HTTPS phase.
+        // DNS/TCP/TLS budgets from two serial phases must not accumulate into
+        // a false worker-stall alarm. A genuine phase stall still latches.
+        if (!event.workerFinished) workerStartMs = event.completedAtMs;
         probeState.localProbeError = false;
         probeState.sshLastMeasured = true;
         probeState.lastSshCode = event.ssh.code;
@@ -238,3 +242,4 @@ void loop() {
     refreshLedState(millis());
     delay(20);
 }
+

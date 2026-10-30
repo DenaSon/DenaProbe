@@ -92,7 +92,7 @@ void printHttpsResult(const HttpsQuality::Result &h) {
         "[https-quality] target=cloudflare_speed_test | path=DIRECT_HOTSPOT_NOT_VPN | "
         "result=%s | bytes=%lu/%lu | dns_ms=%lu | headers_ms=%lu | "
         "first_body_ms=%lu | body_transfer_ms=%lu | total_ms=%lu | "
-        "body_rate_kibps_approx=%lu | http_code=%d | stream_code=%d | "
+        "body_rate_kibps_approx=%lu | http_code=%d | stream_code=%d | deadline_exceeded=%u | "
         "tls_cert_check=ENABLED | vpn_data_path=NOT_TESTED | "
         "telegram_update=NOT_TESTED | general_internet_verdict=INCONCLUSIVE\n",
         HttpsQuality::statusName(h.status),
@@ -104,7 +104,8 @@ void printHttpsResult(const HttpsQuality::Result &h) {
         static_cast<unsigned long>(h.bodyTransferMs),
         static_cast<unsigned long>(h.totalMs),
         static_cast<unsigned long>(h.approxKibPerSec),
-        h.httpCode, h.httpStreamResult);
+        h.httpCode, h.httpStreamResult,
+        static_cast<unsigned int>(h.deadlineExceeded));
 }
 
 void printOverall(const ProbeState &snapshot, bool httpsNewSample, bool wifiConnected) {
@@ -195,3 +196,4 @@ void printResult(const Result &result) {
 }
 
 } // namespace DenaProbe
+

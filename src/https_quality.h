@@ -8,6 +8,7 @@
 #include <HTTPClient.h>
 #include <esp_heap_caps.h>
 #include <time.h>
+#include "denaprobe/DeadlineClient.h"
 
 namespace HttpsQuality {
 
@@ -19,6 +20,7 @@ constexpr uint32_t kBodyBytes = 65536U;
 #endif
 constexpr uint32_t kSlowBodyThresholdMs = PROBE_HTTPS_SLOW_BODY_MS;
 constexpr uint32_t kMaxBodyMs = 12000U;
+constexpr uint32_t kMaxHeadersMs = 20000U; // Includes bounded TCP/TLS setup.
 constexpr uint32_t kMinFreeHeap = 95000U;
 constexpr uint32_t kMinLargestBlock = 46000U;
 constexpr const char *kHost = "speed.cloudflare.com";
@@ -91,6 +93,32 @@ struct Result {
     uint32_t approxKibPerSec = 0;
     int httpCode = 0;
     int httpStreamResult = 0;
+    bool deadlineExceeded = false;
+};
+
+struct ProbeRuntime {
+    static uint32_t now() { return millis(); }
+    static bool linkUp() { return WiFi.status() == WL_CONNECTED; }
+};
+
+class ProbeTlsClient : public DenaProbe::DeadlineClient<WiFiClientSecure, ProbeRuntime> {
+public:
+    explicit ProbeTlsClient(const IPAddress &address) : address_(address) {}
+    int connect(const char *host, uint16_t port, int32_t timeout) override {
+        if (!allowed() || strcmp(host, kHost) != 0 || port != 443) return 0;
+        setConnectionTimeout(timeout > 0 && timeout < 7000 ? timeout : 7000);
+        // Use the already resolved address WITHOUT losing SNI or certificate
+        // hostname verification. This public API is covered by the pinned
+        // Arduino-ESP32 3.3.12 build; do not use the IP-only TLS overload.
+        const int connected = WiFiClientSecure::connect(
+            address_, port, host, kGtsRootR4, nullptr, nullptr);
+        return allowed() ? connected : 0;
+    }
+    int connect(const char *host, uint16_t port) override {
+        return connect(host, port, 7000);
+    }
+private:
+    IPAddress address_;
 };
 
 // HTTPClient::writeToStream() supports both identity and chunked HTTP bodies.
@@ -102,7 +130,7 @@ public:
     size_t write(const uint8_t *buffer, size_t length) override {
         (void)buffer;
         const uint32_t now = millis();
-        if (now - startedMs_ > kMaxBodyMs) {
+        if (now - startedMs_ >= kMaxBodyMs) {
             timeLimitHit = true;
             return 0;
         }
@@ -161,6 +189,11 @@ Result run() {
     const uint32_t dnsStart = millis();
     const bool dnsOk = WiFi.hostByName(kHost, serverIp) == 1;
     result.dnsMs = millis() - dnsStart;
+    if (WiFi.status() != WL_CONNECTED) {
+        result.status = Status::WIFI_DOWN;
+        result.totalMs = millis() - startMs;
+        return result;
+    }
     if (!dnsOk) {
         result.status = Status::DNS_FAIL;
         result.totalMs = millis() - startMs;
@@ -168,11 +201,11 @@ Result run() {
     }
 
     // SNI and HTTP Host must both use the hostname (not the resolved IP).
-    WiFiClientSecure tls;
+    ProbeTlsClient tls(serverIp);
     tls.setCACert(kGtsRootR4);
     tls.setHandshakeTimeout(7);
-    // HTTPClient::setTimeout below is in milliseconds and sets the
-    // underlying WiFiClientSecure read timeout in seconds as required.
+    // Stream read timeout is in milliseconds in the pinned framework.
+    // Absolute deadlines below also handle no-progress/slow-drip responses.
 
     HTTPClient http;
     http.setConnectTimeout(7000);
@@ -187,10 +220,14 @@ Result run() {
     http.addHeader("Cache-Control", "no-store");
     // Deliberately do not enable automatic redirects.
     const uint32_t requestStartMs = millis();
+    tls.arm(kMaxHeadersMs);
     result.httpCode = http.GET();
     result.headersMs = millis() - requestStartMs;
-    if (result.httpCode < 0) {
-        result.status = Status::TLS_OR_CONNECT_FAIL;
+    result.deadlineExceeded = tls.deadlineExceeded();
+    if (tls.linkLost() || WiFi.status() != WL_CONNECTED ||
+        result.deadlineExceeded || result.httpCode < 0) {
+        result.status = tls.linkLost() || WiFi.status() != WL_CONNECTED
+            ? Status::WIFI_DOWN : Status::TLS_OR_CONNECT_FAIL;
         http.end();
         result.totalMs = millis() - startMs;
         return result;
@@ -216,15 +253,19 @@ Result run() {
         return result;
     }
 
+    tls.arm(kMaxBodyMs);
     CountingSink sink(millis());
     result.httpStreamResult = http.writeToStream(&sink);
     result.bytes = sink.received;
     result.firstBodyMs = sink.gotFirst ? sink.firstAtMs - requestStartMs : 0;
     result.bodyTransferMs = sink.gotFirst ? sink.lastAtMs - sink.firstAtMs : 0;
     result.totalMs = millis() - startMs;
+    result.deadlineExceeded = tls.deadlineExceeded() || sink.timeLimitHit;
+    const bool wifiLost = tls.linkLost() || WiFi.status() != WL_CONNECTED;
     http.end();
-    if (sink.tooLarge) result.status = Status::BODY_TOO_LARGE;
-    else if (sink.timeLimitHit || result.httpStreamResult < 0)
+    if (wifiLost) result.status = Status::WIFI_DOWN;
+    else if (sink.tooLarge) result.status = Status::BODY_TOO_LARGE;
+    else if (result.deadlineExceeded || result.httpStreamResult < 0)
         result.status = Status::BODY_ERROR;
     else if (result.httpStreamResult != static_cast<int>(kBodyBytes) ||
              sink.received != kBodyBytes)
@@ -245,3 +286,4 @@ Result run() {
 }
 
 } // namespace HttpsQuality
+

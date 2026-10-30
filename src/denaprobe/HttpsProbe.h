@@ -1,9 +1,10 @@
 #pragma once
 #include "../https_quality.h"
 namespace DenaProbe {
-// Preserve the tested public 64 KiB HTTPS implementation byte-for-byte.
+// Public 64 KiB HTTPS probe with source-side response deadlines.
 // This probe never tests NPV tunneling or Telegram connectivity.
 inline HttpsQuality::Result runPublicHttpsProbe() {
     return HttpsQuality::run();
 }
 } // namespace DenaProbe
+
