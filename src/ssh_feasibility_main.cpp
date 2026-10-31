@@ -193,6 +193,7 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
             telemetryBatchActive = false;
         }
     }
+    if (telemetryJournal.size() == 0) telemetryBatchActive = false;
     if (telemetryJournal.dropped() != telemetryLastDropped) {
         telemetryLastDropped = telemetryJournal.dropped();
         Serial.printf("[dpt-queue] dropped_total=%lu | "
@@ -405,7 +406,8 @@ void loop() {
     ProbeEvent event{};
     if (eventQueue.receive(event)) consumeEvent(event);
 #ifndef DENAPROBE_HOST_TEST
-    telemetryUpdate(millis(), workerRunning, WiFi.status() == WL_CONNECTED);
+    telemetryUpdate(millis(), workerRunning || scheduler.sshDue(millis()),
+                    WiFi.status() == WL_CONNECTED);
 #endif
 
     if (PROBE_HTTPS_QUALITY_ENABLED) {
