@@ -178,9 +178,9 @@ inline DeliveryResult deliver(const Message &message, uint64_t sendUptime,
     http.setTimeout(4000);
     http.setReuse(false);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    if (!http.begin(tls, PROBE_DPT_API_URL)) return result;
     const char *retryKeys[] = {"Retry-After"};
     http.collectHeaders(retryKeys, 1);
-    if (!http.begin(tls, PROBE_DPT_API_URL)) return result;
     char uptime[24]{};
     snprintf(uptime, sizeof(uptime), "%llu",
              static_cast<unsigned long long>(sendUptime));
