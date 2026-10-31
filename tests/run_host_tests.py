@@ -1,5 +1,6 @@
 """Compile real R1 modules against deterministic peripherals; no ESP32/network."""
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,4 +15,4 @@ with tempfile.TemporaryDirectory(prefix="denaprobe-r1-") as build:
     ], check=True)
     # A regression that hangs must fail CI rather than run indefinitely.
     subprocess.run([str(executable)], check=True, timeout=20)
-    subprocess.run([os.environ.get("PYTHON", "python3"), str(root / "tests/test_dpt_vector.py")], check=True, timeout=10)
+    subprocess.run([sys.executable, str(root / "tests/test_dpt_vector.py")], check=True, timeout=10)
