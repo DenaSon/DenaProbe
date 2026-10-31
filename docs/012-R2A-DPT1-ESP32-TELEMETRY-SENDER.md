@@ -23,10 +23,12 @@
   one by one; BOOT, failed SSH and local fault results can send as soon as
   internet/clock/resource conditions allow. One POST always contains
   **one** DPT/1 event, not a JSON batch.
-- Prioritizes recently measured data when the queue contains backlog;
-  older accepted data is expected to be marked `HISTORY_ONLY` by the server.
-  Receipt time and `send_uptime-u` distinguish delivery delay; older records
-  must not trigger new incidents.
+- **R2-C hardening branch only:** emits the oldest retained event first (FIFO)
+  after BOOT. An urgent fault begins immediate FIFO draining without jumping
+  over older `q`. Previously deployed R2-A source prioritized newer backlog
+  messages and the 2026-10-31 field test showed HISTORY_ONLY and an unpopulated
+  HTTPS live channel as a result. Dropped/late samples remain separate
+  historical evidence; see the [hardening runbook](014-R2C-HARDENING-FIFO-LIVE-STATE-2026-10-31.md).
 - HTTPS delivery with a locally provisioned CA + **hostname verification**,
   SHA-256 body hash, HMAC-SHA256 over the DPT1 canonical signing string,
   unpadded base64url signature, matching `v,b,q` durable ACK.
@@ -173,3 +175,9 @@ continuity, security and endurance release gates described in the field report.
 - [R2-C hardware-to-Core E2E field validation, configuration, observed ACKs, local Core results, security follow-ups and unresolved monitoring gap](013-R2C-DPT1-HARDWARE-CORE-FIELD-VALIDATION-2026-10-31.md).
 - Observed on Core: `DPT_CHECK= ok EVENT_COUNT= 8`; observed later in `device_latest_state`: `ssh_sequence=12`, `https_sequence=NULL`, `monitoring_gap=1` (separate snapshots). The device's queue newest-first choice conflicts with strict sequential live-state promotion; backlog remains history only. Do not weaken authentication or promote old observations to live simply to clear the gap.
 - **Next phase = R2-C Hardening, NOT STARTED.** No alerts or automated network changes until the acceptance gates pass.
+
+## R2-C Hardening — branch-specific update (not deployed)
+
+The post-field-test hardening source branch changes the bounded sender queue to FIFO while retaining BOOT priority, signed immutable ACK and retransmission guards. `hasUrgent()` starts early draining without reordering. The paired Collector source branch requires two fresh, consecutive **SSH** observations before clearing monitoring gap, not a BOOT or Wi-Fi event plus one SSH.
+
+No C++ wire-code registry, API signature or production service is changed by this source-only patch. Parent PR #6 and Core PR #262 remain independent and unmerged. See [docs/014](014-R2C-HARDENING-FIFO-LIVE-STATE-2026-10-31.md) for test and staged release requirements. The baseline hardware field evidence remains [docs/013](013-R2C-DPT1-HARDWARE-CORE-FIELD-VALIDATION-2026-10-31.md).
