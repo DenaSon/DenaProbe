@@ -4,6 +4,9 @@
 // implemented, the CA chain is independently verified and HMAC provisioned.
 // Do not use SSH/NPV credentials, public fixture keys, or private Core IPs.
 #define PROBE_DPT_ENABLED 0
+// For first physical R2-A test only: 1 means print DPT/1 JSON on Serial,
+// no HTTP requests, no device secret, no ACK. Set back to 0 for production.
+#define PROBE_DPT_OFFLINE_SMOKE_TEST 0
 #define PROBE_DPT_DEVICE_ID "dp-lte-01"      // registered opaque device ID
 #define PROBE_DPT_TARGET_ID 1              // registered, versioned target ID
 #define PROBE_DPT_KEY_ID "k1"               // provisioned key identifier
