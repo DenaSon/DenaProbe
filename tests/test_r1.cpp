@@ -1,4 +1,5 @@
 #include "../src/ssh_feasibility_main.cpp"
+#include "../src/denaprobe/TelemetryAck.h"
 #include <iostream>
 #include <initializer_list>
 #include <string>
@@ -391,6 +392,30 @@ int main() {
         assert(clock.now() == (1ULL << 32) + 0x20U);
         assert(clock.at(0xfffffff8U) == 0xfffffff8ULL);
         assert(clock.at(0x00000018U) == (1ULL << 32) + 0x18U);
+    });
+    check("DPT/1 ACK accepts permuted exact identity and history-only", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        const char *json = " { \"ack\" : {\"r\":2},\"q\":16,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"v\":1 } ";
+        uint8_t ack = 255;
+        Dpt::AckParser p(json);
+        assert(p.matches(boot, 16, ack) && ack == 2);
+    });
+    check("DPT/1 ACK rejects stale/mismatched, duplicate and garbage fields", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        const char *bad[] = {
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":17,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65e\",\"q\":16,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":3}}",
+            "{\"v\":1,\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0,\"x\":2}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":016,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0}} extra"
+        };
+        for (const char *json : bad) {
+            uint8_t ack = 255;
+            Dpt::AckParser p(json);
+            assert(!p.matches(boot, 16, ack));
+        }
     });
     std::cout << tests << " R1 + DPT/1 host cases passed (simulated peripherals; hardware pending)\n";
 }
