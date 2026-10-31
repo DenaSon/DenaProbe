@@ -191,7 +191,8 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
                 const uint32_t seconds = 5UL << (telemetryRetries - 1);
                 const uint32_t delayMs = (seconds > 160UL ? 160UL : seconds)
                     * 1000UL + (esp_random() % 1500UL);
-                telemetryRetryDueMs = millis() +\n                    (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
+                telemetryRetryDueMs = millis() +
+                    (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
             }
             telemetryBatchActive = false;
         }
@@ -416,7 +417,8 @@ void loop() {
         consumeEvent(event);
     }
 #ifndef DENAPROBE_HOST_TEST
-    telemetryUpdate(millis(), workerRunning ||\n                    scheduler.sshDueWithin(millis(), 18000UL),
+    telemetryUpdate(millis(), workerRunning ||
+                    scheduler.sshDueWithin(millis(), 18000UL),
                     WiFi.status() == WL_CONNECTED);
 #endif
 
