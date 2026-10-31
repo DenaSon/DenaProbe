@@ -16,6 +16,9 @@
 #ifndef PROBE_DPT_ENABLED
 #define PROBE_DPT_ENABLED 0
 #endif
+#ifndef PROBE_DPT_OFFLINE_SMOKE_TEST
+#define PROBE_DPT_OFFLINE_SMOKE_TEST 0
+#endif
 #ifndef PROBE_DPT_DEVICE_ID
 #define PROBE_DPT_DEVICE_ID ""
 #endif
