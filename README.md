@@ -4,9 +4,9 @@
 
 DenaProbe is a small hardware research project for comparing healthy and disrupted network connectivity. The first experiment focuses on **MCI (Hamrah-e Aval) mobile internet**, accessed through a **2.4 GHz Wi-Fi hotspot** by an ESP32 DevKit.
 
-> **Current experimental branch status (2026-10-29):** Phase 1B.4 SSH feasibility firmware was successfully built, flashed and observed on an ESP32; one 12/12 SSH PASS window and independent 64 KiB HTTPS PASS samples were captured. Controlled failure-pattern validation is still pending. **DPT/1 is a documented, not yet implemented telemetry contract.** No NVLBot ingest, VPN/NPV authentication, filtering classifier or production alert service exists. Older v0.0.x sections below are historical and describe their own testing state.
+> **Current experimental status (2026-10-31):** ESP32 R2-A signed DPT/1 sender and separately staged R2-B Core Collector achieved **real hardware-to-Core HTTPS/HMAC/durable ACK success**. Core recorded 8 events in the first field snapshot; latest-state continuity **remains open** (`ssh_sequence=12`, `https_sequence=NULL`, `monitoring_gap=1` at a later read). R2-C Hardening has **not** started. Source PRs #6 (DenaProbe) and #262 (nvl-bot) remain open/unmerged. No NVLBot alerts, VPN/NPV authentication, filtering classifier or production alert service exists. Earlier v0.0.x sections are historical.
 
-**R2-A source-only update (2026-10-31):** Optional DPT/1 signed HTTPS sender, disabled until a Core collector and unique device credentials are provisioned. It preserves SSH/HTTPS probes, sends raw observations only (no on-device filtering classifier), buffers events in bounded RAM and follows the 90-second normal flush policy. R2-B Core ingestion and R2-C hardware end-to-end verification remain pending.
+**R2-A / R2-B / R2-C field update (2026-10-31):** The optional sender remains disabled in public templates, but was enabled in the operator's ignored local configuration for the successful test. The Core Collector runs as nonroot `denaprobe`, binds only `127.0.0.1:18081`, and is served through the `denaprobe-core` Cloudflare Tunnel at `board.nvlsup.online`. Serial logs confirmed `HTTPS_SENDER` and `ACCEPTED` HTTP 200; Core SQLite recorded messages with strict HMAC/ACK. **Outstanding:** newest-first sender queue versus sequential live-state promotion creates `HISTORY_ONLY` rows and unresolved monitoring gap. See [R2-C field evidence](docs/013-R2C-DPT1-HARDWARE-CORE-FIELD-VALIDATION-2026-10-31.md).
 
 **R1 update (2026-10-30):** SSH/HTTPS events are separated. Source-side HTTPS
 deadlines and Wi-Fi/DNS fault classification are hardened, with 30 deterministic
@@ -21,7 +21,7 @@ see the [R1 validation runbook](docs/009-R1-CORE-REFACTOR.md).
 - **Phase 1 / Step 0 (completed):** Validate ESP32 Wi-Fi association with an MCI LTE phone hotspot.
 - **Phase 1A:** Audit real healthy vs. failed connections using independent controls and a reference client.
 - **Phase 1B (experimental):** v0.0.x baseline probes preceded the isolated 1B.4 no-credential SSH transport/pinned-host-key/SERVICE_ACCEPT and separate 64 KiB HTTPS checks. Successful-path hardware testing exists; full fault-path validation is pending.
-- **Phase 2 (planned, not implemented):** DPT/1 device telemetry to NVLBot, signed ingestion, history; alerts are a separate later phase.
+- **Phase 2 (experimental / partial):** DPT/1 ESP32 signed telemetry into an **isolated** Core Collector and SQLite is validated on real hardware. Integration into NVLBot decisions, reliable live-state continuity, adverse-network regressions and alerts remain **not implemented/not accepted**.
 - **Later:** Evaluate SIM800L 2G/GPRS independently. It is **not** part of Phase 1.
 
 A successful DNS lookup, TCP connection, or SSH identification exchange **does not prove** that SSH authentication or a VPN tunnel works. A failed connection **does not by itself prove filtering**.
@@ -53,7 +53,8 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 - [SSH feasibility and hardware field observations](docs/007-SSH-FEASIBILITY-SPIKE.md)
 - [R1 refactor, review fixes and hardware validation](docs/009-R1-CORE-REFACTOR.md)
 - [R2-A DPT/1 ESP32 Telemetry Sender — local setup and validation](docs/012-R2A-DPT1-ESP32-TELEMETRY-SENDER.md)
-- **[DPT/1 cross-platform telemetry contract](docs/008-DPT-TELEMETRY-CONTRACT-V1.md)** ([codes](contracts/dpt/v1/code-registry.json) · [JSON Schema](contracts/dpt/v1/telemetry.schema.json) · [fixtures](contracts/dpt/v1/fixtures.json)) — documentation only; firmware/NVLBot integration pending.
+- **[R2-C real hardware-to-Core field report and pre-hardening handoff](docs/013-R2C-DPT1-HARDWARE-CORE-FIELD-VALIDATION-2026-10-31.md)** — successful E2E ACK/storage, unresolved live-state gap, security and remaining tests.
+- **[DPT/1 cross-platform telemetry contract](docs/008-DPT-TELEMETRY-CONTRACT-V1.md)** ([codes](contracts/dpt/v1/code-registry.json) · [JSON Schema](contracts/dpt/v1/telemetry.schema.json) · [fixtures](contracts/dpt/v1/fixtures.json)) — versioned source for experimental firmware/Collector implementation; **bot alert integration pending**.
 
 ## Public repository safety
 
