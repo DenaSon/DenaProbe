@@ -6,6 +6,8 @@ DenaProbe is a small hardware research project for comparing healthy and disrupt
 
 > **Current experimental branch status (2026-10-29):** Phase 1B.4 SSH feasibility firmware was successfully built, flashed and observed on an ESP32; one 12/12 SSH PASS window and independent 64 KiB HTTPS PASS samples were captured. Controlled failure-pattern validation is still pending. **DPT/1 is a documented, not yet implemented telemetry contract.** No NVLBot ingest, VPN/NPV authentication, filtering classifier or production alert service exists. Older v0.0.x sections below are historical and describe their own testing state.
 
+**R2-A source-only update (2026-10-31):** Optional DPT/1 signed HTTPS sender, disabled until a Core collector and unique device credentials are provisioned. It preserves SSH/HTTPS probes, sends raw observations only (no on-device filtering classifier), buffers events in bounded RAM and follows the 90-second normal flush policy. R2-B Core ingestion and R2-C hardware end-to-end verification remain pending.
+
 **R1 update (2026-10-30):** SSH/HTTPS events are separated. Source-side HTTPS
 deadlines and Wi-Fi/DNS fault classification are hardened, with 30 deterministic
 host cases and pinned dual-target CI. Path, Wi-Fi and trust failures are counted
@@ -50,6 +52,7 @@ Expected: `[wifi] CONNECTED`, assigned IP/gateway/DNS, periodic `[wifi] OK` with
 - [Healthy MCI baseline runbook](docs/003-HEALTHY-BASELINE-RUNBOOK.md)
 - [SSH feasibility and hardware field observations](docs/007-SSH-FEASIBILITY-SPIKE.md)
 - [R1 refactor, review fixes and hardware validation](docs/009-R1-CORE-REFACTOR.md)
+- [R2-A DPT/1 ESP32 Telemetry Sender — local setup and validation](docs/012-R2A-DPT1-ESP32-TELEMETRY-SENDER.md)
 - **[DPT/1 cross-platform telemetry contract](docs/008-DPT-TELEMETRY-CONTRACT-V1.md)** ([codes](contracts/dpt/v1/code-registry.json) · [JSON Schema](contracts/dpt/v1/telemetry.schema.json) · [fixtures](contracts/dpt/v1/fixtures.json)) — documentation only; firmware/NVLBot integration pending.
 
 ## Public repository safety
