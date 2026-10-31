@@ -188,7 +188,7 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
                 const uint32_t seconds = 5UL << (telemetryRetries - 1);
                 const uint32_t delayMs = (seconds > 160UL ? 160UL : seconds)
                     * 1000UL + (esp_random() % 1500UL);
-                telemetryRetryDueMs = millis() + delayMs;
+                telemetryRetryDueMs = millis() +\n                    (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
             }
             telemetryBatchActive = false;
         }
