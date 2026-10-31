@@ -51,6 +51,12 @@ python3 -m py_compile denaprobe_ingest/collector.py
 
 Do not restart production `nvlbot.service` or `gost.service`, touch `/root/master_bot.db`, change tunnel/DNS, print `devices.json` contents, or weaken TLS. First verify that the exposed old `k1` key is revoked without displaying private values; `k2` must be present. Existing live Collector and flashed firmware are **not** automatically updated by GitHub commits.
 
+## GitHub Actions result (2026-10-31)
+
+- DenaProbe PR #7: `R1 ESP32 checks` workflow: **host-tests SUCCESS**, **platformio SUCCESS** (commit verified before this documentation status update).
+- Paired Core PR #263 targets the R2-B feature branch: no workflow run was returned by the connector for that branch/commit at the time of inspection. **No claim that Core tests passed in CI.** Run the Core standalone suite from an isolated staging checkout before any service update.
+- Both PRs are open and unmerged; neither CI success nor source push replaces operator-controlled board flash or Core deployment.
+
 ## Field acceptance (not yet met)
 
 - [ ] PR CI green for both repos (host + firmware CI).
