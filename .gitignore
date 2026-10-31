@@ -20,3 +20,6 @@ Thumbs.db
 
 # Local-only Core/Edge probing target (private infrastructure).
 include/probe_private.h
+
+# Local-only DPT/1 device identity, shared secret and collector trust anchor.
+include/telemetry_private.h
