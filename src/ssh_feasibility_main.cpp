@@ -130,7 +130,10 @@ void telemetryOnSsh(const ProbeEvent &event) {
     telemetryPendingHttps = !event.workerFinished;
     telemetryPendingSsh = event.ssh;
     telemetryPendingSshAt = telemetryUptime.at(event.completedAtMs);
-    telemetryPendingWifi = WiFi.status() == WL_CONNECTED;
+    // Capture the link as observed by the SSH probe, not a potentially
+    // changed Wi-Fi state at main-loop consumption time.
+    telemetryPendingWifi = event.ssh.code != Code::WIFI_LOST &&
+                           event.ssh.wifiRssiDbm < 0;
     if (!telemetryPendingHttps) {
         telemetryJournal.pushSsh(telemetryPendingSsh,
                                  telemetryPendingSshAt, telemetryPendingWifi);
