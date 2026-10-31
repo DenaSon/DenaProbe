@@ -331,5 +331,66 @@ int main() {
         workerRunning = false; Fake::now += 30000; loop();
         assert(Fake::taskCreates == 0);
     });
-    std::cout << tests << " R1 host cases passed (simulated peripherals; hardware pending)\n";
+    check("DPT/1 numeric registry SSH paths and milestones", [] {
+        Result r{};
+        r.code = Code::PASS;
+        r.stages.bannerMs = 418; r.stages.kexInitTxMs = 424;
+        r.stages.kexInitRxMs = 621; r.stages.algorithmsMs = 624;
+        r.stages.newkeysRxMs = 2044; r.stages.transportVerified = true;
+        assert(Dpt::code(r.code) == 1 && Dpt::stage(r) == 52);
+        assert(Dpt::observations(r) == 255);
+        r.code = Code::SERVICE_ACCEPT_TIMEOUT;
+        assert(Dpt::code(r.code) == 50 && Dpt::stage(r) == 51);
+        assert(Dpt::observations(r) == 127);
+        r.code = Code::SSH_CONNECT_TIMEOUT; r.stages = {};
+        assert(Dpt::code(r.code) == 30 && Dpt::stage(r) == 30);
+        assert(Dpt::observations(r) == 0);
+        r.code = Code::HOST_KEY_MISMATCH;
+        assert(Dpt::code(r.code) == 41 && Dpt::stage(r) == 40);
+        assert(Dpt::httpsCode(HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT) == 2);
+    });
+    check("DPT/1 boot, seq and HTTPS subobject are immutable per event", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 100, false));
+        assert(j.size() == 1 && j.at(0)->sequence == 1);
+        assert(std::string(j.at(0)->body).find("\"k\":3") != std::string::npos);
+        Result r{}; r.code = Code::PASS; r.wifiRssiDbm = -48;
+        r.transportMs = 3320; r.serviceMs = 198; r.stages.startedAt = 160;
+        r.stages.transportVerified = true;
+        assert(j.pushSsh(r, 500, true));
+        assert(j.at(1)->sequence == 2 && j.at(1)->kind == 1);
+        assert(std::string(j.at(1)->body).find("\"h\":") == std::string::npos);
+        HttpsQuality::Result h{};
+        h.status = HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT;
+        h.bytes = 65536; h.bodyTransferMs = 4200; h.httpCode = 200;
+        h.totalMs = 7700; h.headersMs = 3490; h.firstBodyMs = 3510;
+        assert(j.pushSsh(r, 700, true, &h, 8700));
+        assert(j.at(2)->sequence == 3 && j.at(2)->completedUptime == 8700);
+        assert(std::string(j.at(2)->body).find("\"h\":{\"c\":2,\"u\":8700") != std::string::npos);
+        assert(std::string(j.at(2)->body).find("\"n\":65536,\"bt\":4200") != std::string::npos);
+        assert(j.at(2)->length == strlen(j.at(2)->body));
+        assert(j.size() == 3 && j.choose() == 0); // BOOT first.
+        j.remove(1);
+        assert(j.choose() == 1); // Newest result when no urgent event.
+    });
+    check("DPT/1 queue bounded; pending BOOT cannot be evicted", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 12, true));
+        Result r{}; r.code = Code::DNS_FAIL;
+        for (int i = 0; i < 18; ++i) assert(j.pushSsh(r, 100 + i, true));
+        assert(j.size() == Dpt::kQueueCapacity && j.dropped() == 7);
+        assert(j.at(0)->kind == 3 && j.at(0)->sequence == 1);
+        assert(j.choose() == 0);
+    });
+    check("DPT/1 uptime is monotonic across wrap and preserves completion", [] {
+        Dpt::ExtendedUptime clock;
+        clock.update(0xfffffff0U);
+        clock.update(0x00000020U);
+        assert(clock.now() == (1ULL << 32) + 0x20U);
+        assert(clock.at(0xfffffff8U) == 0xfffffff8ULL);
+        assert(clock.at(0x00000018U) == (1ULL << 32) + 0x18U);
+    });
+    std::cout << tests << " R1 + DPT/1 host cases passed (simulated peripherals; hardware pending)\n";
 }
