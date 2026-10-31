@@ -90,18 +90,24 @@ void telemetryWorker(void *) {
 }
 
 void telemetryBoot() {
-    if (!PROBE_DPT_ENABLED) {
+    if (PROBE_DPT_ENABLED && PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        Serial.println("[dpt] disabled | reason=ONLINE_AND_SMOKE_MUTUALLY_EXCLUSIVE");
+        return;
+    }
+    if (!PROBE_DPT_ENABLED && !PROBE_DPT_OFFLINE_SMOKE_TEST) {
         Serial.println("[dpt] disabled | collector=NOT_CONFIGURED");
         return;
     }
-    if (!Dpt::validSettings()) {
+    if (!PROBE_DPT_OFFLINE_SMOKE_TEST && !Dpt::validSettings()) {
         Serial.println("[dpt] disabled | reason=INVALID_LOCAL_CONFIG");
         return;
     }
-    telemetryCompletionQueue = xQueueCreate(1, sizeof(Dpt::DeliveryResult));
-    if (!telemetryCompletionQueue) {
-        Serial.println("[dpt] disabled | reason=QUEUE_ALLOC_FAILED");
-        return;
+    if (!PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        telemetryCompletionQueue = xQueueCreate(1, sizeof(Dpt::DeliveryResult));
+        if (!telemetryCompletionQueue) {
+            Serial.println("[dpt] disabled | reason=QUEUE_ALLOC_FAILED");
+            return;
+        }
     }
     uint8_t randomBoot[16]{};
     esp_fill_random(randomBoot, sizeof(randomBoot));
@@ -114,13 +120,16 @@ void telemetryBoot() {
     memset(randomBoot, 0, sizeof(randomBoot));
     telemetryUptime.update(millis());
     telemetryReady = telemetryJournal.begin(
-        PROBE_DPT_DEVICE_ID, bootId,
-        static_cast<uint16_t>(PROBE_DPT_TARGET_ID),
+        PROBE_DPT_OFFLINE_SMOKE_TEST ? "dp-smoke" : PROBE_DPT_DEVICE_ID,
+        bootId,
+        static_cast<uint16_t>(PROBE_DPT_OFFLINE_SMOKE_TEST ?
+                              1 : PROBE_DPT_TARGET_ID),
         telemetryUptime.now(), WiFi.status() == WL_CONNECTED);
     telemetryLastBatchMs = millis();
-    Serial.printf("[dpt] %s | version=1 | queue_capacity=%u | "
+    Serial.printf("[dpt] %s | version=1 | mode=%s | queue_capacity=%u | "
                   "period_ms=%lu | one_event_per_post=1 | detection=SERVER_ONLY\n",
                   telemetryReady ? "READY" : "DISABLED",
+                  PROBE_DPT_OFFLINE_SMOKE_TEST ? "OFFLINE_SMOKE_NO_NETWORK" : "HTTPS_SENDER",
                   static_cast<unsigned>(Dpt::kQueueCapacity),
                   static_cast<unsigned long>(Dpt::kNormalFlushMs));
 }
@@ -150,7 +159,37 @@ void telemetryOnHttps(const ProbeEvent &event) {
 }
 
 void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
-    if (!telemetryReady || !telemetryCompletionQueue) return;
+    if (!telemetryReady) return;
+    if (PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        // Deterministic on-board smoke test: measure and encode real SSH/HTTPS,
+        // then display an opaque-ID event WITHOUT contacting any server.
+        // Removal here is NOT an ACK and MUST NOT be used as live delivery.
+        if (now - telemetryLastBatchMs >= Dpt::kNormalFlushMs) {
+            telemetryLastBatchMs = now;
+            telemetryBatchActive = true;
+        }
+        if (!probeBusy) {
+            const int index = telemetryJournal.choose();
+            const Dpt::Message *sample = index >= 0
+                ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
+            if (sample && (sample->urgent || telemetryBatchActive)) {
+                Serial.printf("[dpt-smoke] WOULD_SEND_NOT_DELIVERED | "
+                              "seq=%lu | kind=%u | length=%u | json=%s\n",
+                              static_cast<unsigned long>(sample->sequence),
+                              static_cast<unsigned>(sample->kind),
+                              static_cast<unsigned>(sample->length), sample->body);
+                telemetryJournal.remove(sample->sequence);
+            }
+        }
+        if (telemetryJournal.size() == 0) telemetryBatchActive = false;
+        if (telemetryJournal.dropped() != telemetryLastDropped) {
+            telemetryLastDropped = telemetryJournal.dropped();
+            Serial.printf("[dpt-smoke] dropped_total=%lu | local_test_only=1\n",
+                          static_cast<unsigned long>(telemetryLastDropped));
+        }
+        return;
+    }
+    if (!telemetryCompletionQueue) return;
     Dpt::DeliveryResult completed{};
     if (xQueueReceive(telemetryCompletionQueue, &completed, 0) == pdTRUE) {
         telemetrySending = false;
