@@ -109,3 +109,40 @@ classification. Excluding the Core collector from this PR is deliberate.
 The definition of operational filtering is **not** a wire status and is
 never computed on ESP32. SSH pre-auth PASS and public direct HTTPS PASS
 do not prove the NPV application data path is healthy.
+
+## Offline hardware smoke test — FIRST, before Core setup
+
+**Test source branch:** `feature/r2a-dpt1-telemetry-sender-20261031`.
+Keep the existing private `include/probe_private.h` with the actual
+SSH Edge hostname and independently verified host-key pin. Do **not**
+overwrite or commit that file.
+
+1. Copy `include/telemetry_private.h.example` to
+   `include/telemetry_private.h` (ignored by Git).
+2. Set `PROBE_DPT_ENABLED=0` and `PROBE_DPT_OFFLINE_SMOKE_TEST=1`.
+   Leave the device secret, URL and CA empty/placeholders for now.
+3. `python tests/run_host_tests.py`
+4. `pio run -e esp32dev_ssh_feasibility`
+5. `pio run -e esp32dev_ssh_feasibility -t upload`
+6. `pio device monitor -b 115200 -f time -f log2file`
+7. Check `[dpt] READY | ... mode=OFFLINE_SMOKE_NO_NETWORK`,
+   `[dpt-smoke] WOULD_SEND_NOT_DELIVERED` and valid `json=` payloads:
+   first event `k=3,q=1`; SSH results have `k=1,s,p,o,d,x,a`
+   as measured; HTTPS subobject `h` appears **only with a fresh
+   HTTPS_RESULT**. A successful SSH+HTTPS cycle must not create two
+   DPT/1 result messages. See `[quality-sample]` for timing cross-check.
+8. Keep Wi-Fi / LED / SSH / HTTPS behavior intact and verify no unexpected
+   watchdog, heap exhaustion or boot loop in a prolonged observation window.
+9. **Record the serial output and firmware commit** for review before any
+   Core networking. No real packet is delivered, no HMAC or TLS exchange
+   occurs, and the printed/simulated removal is **NOT** durable ACK.
+10. Switch `PROBE_DPT_OFFLINE_SMOKE_TEST` back to `0` after testing.
+    Leave `PROBE_DPT_ENABLED=0` until R2-B Collector is ready.
+
+**Future Core domain (reserved, not configured):** `nvsu2025.ir`.
+Recommended isolated API hostname: `telemetry.nvsu2025.ir` (requires
+owner DNS/HTTPS setup in R2-B). Final on-device HTTPS endpoint:
+`https://telemetry.nvsu2025.ir/api/dpt/v1/telemetry`.
+DNS IP changes behind this stable hostname do not require another flash;
+the initial secure provisioning of unique HMAC key, CA and URL *does*
+require one configuration flash. Neither DNS nor Core is changed in R2-A.
