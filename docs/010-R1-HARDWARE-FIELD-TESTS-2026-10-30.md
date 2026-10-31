@@ -248,6 +248,10 @@ fine) and retain the PlatformIO `-f log2file` output. Verify the log
 file is actually progressing and obtain precise incident timestamps
 from an independent reference/client when possible.
 
+## 5 — Relay-change comparison, 2026-10-31
+
+A separate 13:02–13:13 field capture now documents a reported **connected-but-weak NPV user experience** before the operator activated a new relay at approximately 13:07. The probe recorded **10/10 SSH PASS before** and **11/13 PASS after**, including one pre-banner/transport timeout and one post-transport SERVICE_ACCEPT timeout; direct public HTTPS was 1 PASS + 1 SLOW before and 2 PASS after. The probe does not confirm the relay ID/path or actual NPV traffic quality, so it cannot establish the intervention's effect or prove filtering. Review the full [R1 relay-change comparative audit](011-R1-RELAY-CHANGE-COMPARATIVE-AUDIT-2026-10-31.md) before interpreting this as a user-path health result.
+
 ## Remaining R1 hardware acceptance
 
 - [x] Healthy SSH path, pinned host key, and separate public HTTPS field runs
