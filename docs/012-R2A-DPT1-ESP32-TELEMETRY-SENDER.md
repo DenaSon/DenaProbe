@@ -139,10 +139,24 @@ overwrite or commit that file.
 10. Switch `PROBE_DPT_OFFLINE_SMOKE_TEST` back to `0` after testing.
     Leave `PROBE_DPT_ENABLED=0` until R2-B Collector is ready.
 
-**Future Core domain (reserved, not configured):** `nvsu2025.ir`.
-Recommended isolated API hostname: `telemetry.nvsu2025.ir` (requires
-owner DNS/HTTPS setup in R2-B). Final on-device HTTPS endpoint:
-`https://telemetry.nvsu2025.ir/api/dpt/v1/telemetry`.
-DNS IP changes behind this stable hostname do not require another flash;
-the initial secure provisioning of unique HMAC key, CA and URL *does*
-require one configuration flash. Neither DNS nor Core is changed in R2-A.
+**Final owner-selected Core collector hostname:** `board.nvlsup.online`
+(Cloudflare DNS A record is reported by the owner to point at Core; that is
+not proof the API or TLS is ready). Intended on-device HTTPS endpoint:
+`https://board.nvlsup.online/api/dpt/v1/telemetry`.
+Keep the existing monitored SSH Edge hostname independent from the API.
+DNS IP changes behind this stable hostname do not require another flash,
+subject to DNS caching and TLS certificate chain continuity. Initial
+provisioning of the HMAC identity, matching hostname CA and URL does
+require a deliberate firmware configuration flash. Neither DNS nor Core
+is modified by R2-A.
+
+**2026-10-31 on-device partial smoke evidence:** the operator's Serial
+snippet showed three valid `[dpt-smoke] WOULD_SEND_NOT_DELIVERED` JSON
+records (seq 5, 4, 3) with consistent SSH `s=1,p=52,o=255`, valid
+`h.c=11` (CLOCK_NOT_READY), and 3/3 SSH PASS during 15:39-15:40.
+The snippet begins mid-boot and does NOT include the `q=1` BOOT sample,
+so full boot lifecycle and real TLS/HMAC/ACK remain unverified. SNTP epoch
+was only 63-173 seconds, `ready=NO`; investigate this prerequisite before
+enabling HTTPS delivery. Do not infer UDP/123 blocking from absent time
+without independent testing. Retain the distinct R2-C hardware+collector
+release gate.
