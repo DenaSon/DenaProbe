@@ -1,0 +1,14 @@
+#pragma once
+// LOCAL-ONLY FILE: copy as include/telemetry_private.h, which is gitignored.
+// DPT/1 collector is NOT yet deployed; leave disabled until Core ingest is
+// implemented, the CA chain is independently verified and HMAC provisioned.
+// Do not use SSH/NPV credentials, public fixture keys, or private Core IPs.
+#define PROBE_DPT_ENABLED 0
+#define PROBE_DPT_DEVICE_ID "dp-lte-01"      // registered opaque device ID
+#define PROBE_DPT_TARGET_ID 1              // registered, versioned target ID
+#define PROBE_DPT_KEY_ID "k1"               // provisioned key identifier
+#define PROBE_DPT_SECRET_HEX ""             // UNIQUE RANDOM 32-byte HMAC key, lowercase hex
+#define PROBE_DPT_API_URL "https://telemetry.example.org/api/dpt/v1/telemetry"
+// PEM of a VERIFIED public CA trust anchor for the API host.
+// Never setInsecure() or disable the certificate hostname check.
+#define PROBE_DPT_CA_PEM ""
