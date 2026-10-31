@@ -413,7 +413,7 @@ void loop() {
         consumeEvent(event);
     }
 #ifndef DENAPROBE_HOST_TEST
-    telemetryUpdate(millis(), workerRunning || scheduler.sshDue(millis()),
+    telemetryUpdate(millis(), workerRunning ||\n                    scheduler.sshDueWithin(millis(), 18000UL),
                     WiFi.status() == WL_CONNECTED);
 #endif
 
