@@ -385,6 +385,17 @@ int main() {
         assert(j.at(0)->kind == 3 && j.at(0)->sequence == 1);
         assert(j.choose() == 0);
     });
+    check("Telemetry sender reserves SSH due window and preserves cadence", [] {
+        ProbeScheduler schedule;
+        assert(schedule.sshDueWithin(0, 18000));
+        schedule.markSshStarted(0);
+        assert(!schedule.sshDueWithin(9000, 18000));
+        assert(schedule.sshDueWithin(12000, 18000));
+        assert(schedule.sshDueWithin(30000, 18000));
+        schedule.markSshStarted(30000);
+        assert(!schedule.sshDueWithin(39000, 18000));
+        assert(schedule.sshDueWithin(42000, 18000));
+    });
     check("DPT/1 uptime is monotonic across wrap and preserves completion", [] {
         Dpt::ExtendedUptime clock;
         clock.update(0xfffffff0U);
