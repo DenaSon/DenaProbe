@@ -40,6 +40,7 @@ struct DeliveryResult {
     Delivery kind = Delivery::RETRY;
     uint32_t sequence = 0;
     int httpStatus = 0;
+    uint32_t retryAfterMs = 0;
 };
 
 inline int hexNibble(char c) {
@@ -209,6 +210,30 @@ private:
     const char *p_;
 };
 
+// Limit arbitrary response size even for chunked/lengthless JSON ACKs.
+class AckSink : public Stream {
+public:
+    size_t write(uint8_t b) override { return write(&b, 1); }
+    size_t write(const uint8_t *data, size_t length) override {
+        if (length > 192 - size_) { overflow_ = true; return 0; }
+        memcpy(body_ + size_, data, length);
+        size_ += length;
+        body_[size_] = '\0';
+        return length;
+    }
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+    const char *body() const { return body_; }
+    size_t size() const { return size_; }
+    bool overflowed() const { return overflow_; }
+private:
+    char body_[193]{};
+    size_t size_ = 0;
+    bool overflow_ = false;
+};
+
 inline DeliveryResult deliver(const Message &message, uint64_t sendUptime,
                               const char *bootId) {
     DeliveryResult result{};
@@ -228,6 +253,8 @@ inline DeliveryResult deliver(const Message &message, uint64_t sendUptime,
     http.setTimeout(4000);
     http.setReuse(false);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    const char *retryKeys[] = {"Retry-After"};
+    http.collectHeaders(retryKeys, 1);
     if (!http.begin(tls, PROBE_DPT_API_URL)) return result;
     char uptime[24]{};
     snprintf(uptime, sizeof(uptime), "%llu",
@@ -242,28 +269,45 @@ inline DeliveryResult deliver(const Message &message, uint64_t sendUptime,
         const_cast<char *>(message.body)), message.length);
     result.httpStatus = status;
     if (status == 200) {
-        const int length = http.getSize();
-        // Only bounded, length-declared ACK bodies; never allocate a huge
-        // untrusted response on an ESP32.
-        if (length > 0 && length <= 192) {
-            const String body = http.getString();
-            if (body.length() <= 192) {
+        const int declaredLength = http.getSize();
+        if (declaredLength > 192) {
+            result.kind = Delivery::SECURITY;
+        } else {
+            AckSink sink;
+            const int received = http.writeToStream(&sink);
+            if (received >= 0 && !sink.overflowed() &&
+                received == static_cast<int>(sink.size()) && sink.size() > 0) {
                 uint8_t ack = 255;
-                AckParser parser(body.c_str());
+                AckParser parser(sink.body());
                 if (parser.matches(bootId, message.sequence, ack)) {
                     result.kind = ack == 0 ? Delivery::ACCEPTED :
                         ack == 1 ? Delivery::DUPLICATE : Delivery::HISTORY_ONLY;
-                } else {
-                    result.kind = Delivery::SECURITY;
-                }
-            } else result.kind = Delivery::SECURITY;
-        } else result.kind = Delivery::SECURITY;
+                } else result.kind = Delivery::SECURITY;
+            } // A truncated network body is retriable, never an ACK.
+        }
     } else if (status == 400 || status == 422) {
         result.kind = Delivery::REJECT;
     } else if (status == 401 || status == 403 || status == 409 ||
-               status == 413 || (status >= 300 && status < 400)) {
+               status == 413 || (status >= 300 && status < 400 && status != 302)) {
         result.kind = Delivery::SECURITY;
-    } // 429, 5xx, networking errors: RETRY with bounded backoff.
+    } else if (status == 302) {
+        result.kind = Delivery::SECURITY; // Do not follow redirects.
+    }
+    if (status == 429 || status >= 500) {
+        const String retry = http.header("Retry-After");
+        if (!retry.isEmpty() && retry.length() <= 5) {
+            uint32_t seconds = 0;
+            bool numeric = true;
+            for (size_t i = 0; i < retry.length(); ++i) {
+                if (retry[i] < '0' || retry[i] > '9') {
+                    numeric = false; break;
+                }
+                seconds = seconds * 10UL + static_cast<uint32_t>(retry[i] - '0');
+            }
+            if (numeric && seconds <= 300UL)
+                result.retryAfterMs = seconds * 1000UL;
+        }
+    }
     http.end();
     return result;
 }
