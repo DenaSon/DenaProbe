@@ -1,0 +1,17 @@
+#pragma once
+
+// LOCAL-ONLY sample for include/probe_report_private.h
+// Do not commit device tokens or real telemetry origin details.
+// Public telemetry ingress MUST use HTTPS with a trusted CA.
+// Never point the ingress hostname at the hidden Core public IP.
+
+#define PROBE_REPORT_HOST "telemetry.example.org"
+#define PROBE_REPORT_PATH "/v1/reports"
+#define PROBE_REPORT_DEVICE_ID "probe_01"
+#define PROBE_REPORT_TOKEN "REPLACE_WITH_RANDOM_64_HEX_CHARS"
+#define PROBE_CARRIER_DECLARED "MCI"  // Operator declaration, NOT verified.
+#define PROBE_REPORT_CA_PEM R"PEM(
+-----BEGIN CERTIFICATE-----
+REPLACE_WITH_PUBLIC_TRUST_ROOT_PEM
+-----END CERTIFICATE-----
+)PEM"

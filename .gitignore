@@ -20,3 +20,6 @@ Thumbs.db
 
 # Local-only Core/Edge probing target (private infrastructure).
 include/probe_private.h
+
+# Local-only DenaProbe HTTPS reporting credentials and public CA trust.
+include/probe_report_private.h
