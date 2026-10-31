@@ -101,7 +101,7 @@ inline uint16_t stage(const Result &r) {
     switch (r.code) {
         case Code::WIFI_LOST: return 10;
         case Code::DNS_FAIL: return 20;
-        case Code::SESSION_ALLOC_FAILED:
+        case Code::SESSION_ALLOC_FAILED: return 90;
         case Code::SSH_OPTIONS_FAILED: return 21;
         case Code::HOST_KEY_ERROR:
         case Code::HOST_KEY_MISMATCH: return 40;
