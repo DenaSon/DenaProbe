@@ -1,6 +1,6 @@
 # R2-A — DPT/1 ESP32 Sender (firmware only)
 
-**Branch:** \`feature/r2a-dpt1-telemetry-sender-20261031\` · **Date:** 2026-10-31  
+**Branch:** `feature/r2a-dpt1-telemetry-sender-20261031` · **Date:** 2026-10-31  
 **Status:** implement/test as experimental only; backend R2-B and end-to-end R2-C are **not deployed**. No filtering determination or notification on ESP32.
 
 ## What R2-A adds
@@ -13,7 +13,7 @@
   HTTPS samples. Source Serial output remains separate diagnostic metadata;
   it is never sent as opaque text.
 - Crypto-strength **128-bit random boot ID**, per-boot event sequence spanning
-  \`BOOT\`, \`PROBE_RESULT\`, \`DEVICE_EVENT\`, extended 64-bit uptime and optional
+  `BOOT`, `PROBE_RESULT`, `DEVICE_EVENT`, extended 64-bit uptime and optional
   Wi-Fi link events. Identifiers are opaque; backend owns target mapping.
 - A bounded **12-message RAM queue** (~12.5 KiB static bytes), no per-sample
   flash writes. BOOT stays queued until collector ACK. On overflow, evict
@@ -24,12 +24,12 @@
   internet/clock/resource conditions allow. One POST always contains
   **one** DPT/1 event, not a JSON batch.
 - Prioritizes recently measured data when the queue contains backlog;
-  older accepted data is expected to be marked \`HISTORY_ONLY\` by the server.
-  Receipt time and \`send_uptime-u\` distinguish delivery delay; older records
+  older accepted data is expected to be marked `HISTORY_ONLY` by the server.
+  Receipt time and `send_uptime-u` distinguish delivery delay; older records
   must not trigger new incidents.
 - HTTPS delivery with a locally provisioned CA + **hostname verification**,
   SHA-256 body hash, HMAC-SHA256 over the DPT1 canonical signing string,
-  unpadded base64url signature, matching \`v,b,q\` durable ACK.
+  unpadded base64url signature, matching `v,b,q` durable ACK.
   Reject redirects and malformed/ambiguous/changed ACK identity.
 - Bounded retry for temporary network/429/5xx failures with exponential
   backoff + jitter, security/config stop on 401/403/409/413 or malformed
@@ -42,15 +42,15 @@
 
 ## Safety and configuration
 
-Default build remains **disabled** (\`PROBE_DPT_ENABLED=0\`) and runs existing
+Default build remains **disabled** (`PROBE_DPT_ENABLED=0`) and runs existing
 R1 probing unchanged. The sender is not configured by the example file:
-\`include/telemetry_private.h.example\` is only a guide. Copy it to
-**ignored** \`include/telemetry_private.h\` when the Core collector actually
+`include/telemetry_private.h.example` is only a guide. Copy it to
+**ignored** `include/telemetry_private.h` when the Core collector actually
 exists, provision a **distinct random 256-bit HMAC key per board** and a
-verified, current CA PEM. Set \`PROBE_DPT_ENABLED=1\` only then.
+verified, current CA PEM. Set `PROBE_DPT_ENABLED=1` only then.
 
-\`PROBE_DPT_API_URL\` must be an HTTPS **DNS hostname** at the exact
-\`/api/dpt/v1/telemetry\` path; no redirects, URL tokens or credentials.
+`PROBE_DPT_API_URL` must be an HTTPS **DNS hostname** at the exact
+`/api/dpt/v1/telemetry` path; no redirects, URL tokens or credentials.
 Prefer an isolated TLS API/edge rather than exposing the protected Core SSH
 host or coupling upload availability to the NPV relay being tested.
 
@@ -59,7 +59,7 @@ measurement continues. If SNTP is not ready, the sender queues data and
 **does not** disable TLS certificate checks. Memory-held events are lost
 on ESP32 reset (registered new BOOT identity). While the same cellular
 internet is genuinely down, buffered events cannot reach the Core; the
-backend must use \`DEVICE_STALE/MONITORING_GAP\` rather than asserting an ISP
+backend must use `DEVICE_STALE/MONITORING_GAP` rather than asserting an ISP
 outage from silence.
 
 **Important staging limitation:** R2-A is a **source-only sender**.
@@ -70,24 +70,24 @@ until R2-B and R2-C complete.
 ## Design of per-cycle HTTPS pairing
 
 R1 emits SSH_RESULT before HTTPS_RESULT on the same worker. DPT/1 allows
-\`h\` **only if that exact SSH cycle runs a new HTTPS sample**. The sender
+`h` **only if that exact SSH cycle runs a new HTTPS sample**. The sender
 therefore temporarily holds that SSH result until its HTTPS_RESULT arrives,
-then encodes **one immutable PROBE_RESULT** with \`u\` (SSH completion uptime)
-and \`h.u\` (HTTPS completion uptime). A cycle without HTTPS is encoded and
-queued immediately. A cached HTTPS from \`[probe-overall]\` is NEVER sent as
-a new \`h\`. The time spent on this actual HTTPS measurement is not a
+then encodes **one immutable PROBE_RESULT** with `u` (SSH completion uptime)
+and `h.u` (HTTPS completion uptime). A cycle without HTTPS is encoded and
+queued immediately. A cached HTTPS from `[probe-overall]` is NEVER sent as
+a new `h`. The time spent on this actual HTTPS measurement is not a
 network send delay; backend must use send-uptime and measurement ages.
 
 ## Server checklist (R2-B)
 
 - Validate HMAC against the original exact body bytes, approved device/key
   identity and signed per-send uptime; never trust C++ enum ordinals.
-- Persist uniquely on \`(device_id, boot_id, sequence)\` including body hash.
-  Same bytes => \`DUPLICATE\`; changed bytes => \`409\`. Reject/restrict
+- Persist uniquely on `(device_id, boot_id, sequence)` including body hash.
+  Same bytes => `DUPLICATE`; changed bytes => `409`. Reject/restrict
   replayed BOOT and out-of-order live-state promotions.
 - Send HTTP 200 **only after durable DB commit** and include a bounded JSON
-  ACK \`{"v":1,"b":"<boot>","q":<seq>,"ack":{"r":0|1|2}}\`
-  with \`Content-Length\` and no extra schema fields.
+  ACK `{"v":1,"b":"<boot>","q":<seq>,"ack":{"r":0|1|2}}`
+  with `Content-Length` and no extra schema fields.
 - Ingestion acknowledges historical-only delayed events but **must not**
   promote them into live-alert candidates or claim VPN/failover.
 - Register each Edge/relay destination with versioned target identity,
@@ -95,15 +95,15 @@ network send delay; backend must use send-uptime and measurement ages.
 
 ## Verification and limitations
 
-Run local host regressions via \`python tests/run_host_tests.py\`.
-CI must build both \`esp32dev\` and \`esp32dev_ssh_feasibility\`.
+Run local host regressions via `python tests/run_host_tests.py`.
+CI must build both `esp32dev` and `esp32dev_ssh_feasibility`.
 Existing SSH/HTTPS hardware tests should still pass without DPT config.
 
 R2-C must confirm the following with an actual authenticated Core test
 collector: HMAC golden vector, correct JSON/schema and stage bits, TLS CA
 and SNI, ACK/duplicate/altered-body handling, 90s normal flush, urgent
 failure, queue overflow under outage, 429/5xx/reboot behavior, no overlap
-or heap crashes during 24h operation, and accurate \`HISTORY_ONLY\`
+or heap crashes during 24h operation, and accurate `HISTORY_ONLY`
 classification. Excluding the Core collector from this PR is deliberate.
 
 The definition of operational filtering is **not** a wire status and is
