@@ -404,7 +404,14 @@ void loop() {
     }
 
     ProbeEvent event{};
-    if (eventQueue.receive(event)) consumeEvent(event);
+    if (eventQueue.receive(event)) {
+#ifndef DENAPROBE_HOST_TEST
+        // The worker may finish just after the timestamp captured at the
+        // start of this loop. Extend uptime AFTER receiving its event.
+        telemetryUptime.update(millis());
+#endif
+        consumeEvent(event);
+    }
 #ifndef DENAPROBE_HOST_TEST
     telemetryUpdate(millis(), workerRunning || scheduler.sshDue(millis()),
                     WiFi.status() == WL_CONNECTED);
