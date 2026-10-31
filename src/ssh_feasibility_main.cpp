@@ -169,10 +169,13 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
             telemetryBatchActive = true;
         }
         if (!probeBusy) {
+            // Offline smoke must mirror the production FIFO choice and
+            // urgent-trigger behavior rather than simulating newest-first.
+            if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
             const int index = telemetryJournal.choose();
             const Dpt::Message *sample = index >= 0
                 ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
-            if (sample && (sample->urgent || telemetryBatchActive)) {
+            if (sample && telemetryBatchActive) {
                 Serial.printf("[dpt-smoke] WOULD_SEND_NOT_DELIVERED | "
                               "seq=%lu | kind=%u | length=%u | json=%s\n",
                               static_cast<unsigned long>(sample->sequence),
@@ -259,9 +262,14 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
         telemetryLastBatchMs = now;
         telemetryBatchActive = true;
     }
+    // An urgent fault may be behind older regular events. Begin draining
+    // immediately, but do not skip the earlier sequence(s). The Core only
+    // promotes strictly ordered fresh samples into device_latest_state.
+    if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
     const int index = telemetryJournal.choose();
-    const Dpt::Message *message = telemetryJournal.at(static_cast<uint8_t>(index));
-    if (!message || (!message->urgent && !telemetryBatchActive)) return;
+    const Dpt::Message *message = index >= 0
+        ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
+    if (!message || !telemetryBatchActive) return;
 
     // Copies the record before launching a worker; the journal can then
     // receive new samples without racing the sender's immutable body.
