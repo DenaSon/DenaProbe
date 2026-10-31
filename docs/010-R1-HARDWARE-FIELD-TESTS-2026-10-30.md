@@ -176,6 +176,78 @@ Its `filtering_verdict=INCONCLUSIVE` is correct until stronger independent
 comparative evidence is obtained. No automatic failover or alert action
 is enabled by this experiment.
 
+## 4 — Morning log after the workstation slept (2026-10-31)
+
+**Observed fragment:** 09:18:31–09:37:02, serial-console local timestamps.
+The operator reported that the Windows workstation entered sleep overnight,
+preventing continuous Serial capture. **There is no overnight evidence** and no
+matched real-world disruption to evaluate from these records.
+
+At 09:19:31 the board reported SSH sequence 9 (`boot_ms=523837`);
+after the console printed `History restored` and the monitor was reopened
+at 09:25:28, the next recorded SSH sequence was **21**
+(`boot_ms=883979`). This proves the on-board uptime/sample counter
+advanced during the **visible ~6-minute monitor gap**, not that all missed
+SSH cycles passed. Samples **10–20** are absent from the supplied file.
+No firmware reset or Wi-Fi-down event appears in the excerpt.
+
+### Recorded SSH and resource observations
+
+- **27/27 visible** `[ssh-deep] END` entries are
+  `SERVICE_ACCEPT_PASS`: sequences 7, 8, 9, and 21–44. Do **not** infer
+  44/44 observed passes or an all-night pass rate.
+- Last rolling window at 09:37:02: `eligible=12 | pass=12 |
+  network_failures=0 | wifi_lost=0 | trust_failures=0 |
+  wifi_down_events_since_boot=0`.
+- Visible SSH transport durations: **3241–3475 ms**; last P90
+  **3437 ms**. RSSI between **-67 and -52 dBm** represents the Wi-Fi
+  hotspot link, not the cellular modem signal.
+- `free_heap` remains in a narrow observed range
+  **158208–158776 bytes**; minimum-ever free heap drops from
+  **129472 to 101272 bytes** by the end of the captured interval.
+  This *historical low-water mark* alone does not prove a memory leak.
+- `filtering_verdict=INCONCLUSIVE`, `npv=NOT_TESTED` and
+  `auth=NOT_TESTED` are the correct limitations.
+
+### Delayed clock initialization / public HTTPS
+
+- At 09:18–09:26, multiple `[clock] ... ready=NO` reports
+  with small unsynchronized epochs persist while SSH succeeds.
+- At **09:26:17.790**, `epoch=1793426177 | ready=YES |
+  boot_ms=933584`; the clock became usable **15 min 34 s after
+  device boot**. This is not necessarily the elapsed time since
+  SNTP configuration, because the initial boot/NTP start is not in
+  this fragment. Prior runs were substantially faster; the reason
+  remains **unresolved**. `udp123=UNVERIFIED` and DNS availability
+  alone cannot prove the NTP server transaction path.
+- Prior `CLOCK_NOT_READY` HTTPS events are *unmeasured*, with
+  zero bytes; they are **not** actual HTTPS failures.
+- Four subsequent genuine direct-hotspot HTTPS 64 KiB samples all
+  returned **HTTP 200**, **65536/65536 bytes** with certificate
+  verification enabled. All four exceeded the firmware's 4000 ms
+  body-duration slow threshold:
+
+| Serial time | HTTP body transfer | Approx. body rate | Status |
+| --- | ---: | ---: | --- |
+| 09:26:38 | 4057 ms | 15 KiB/s | `SLOW_64K_SAMPLE_SUSPECT` |
+| 09:29:40 | 5962 ms | 10 KiB/s | `SLOW_64K_SAMPLE_SUSPECT` |
+| 09:32:44 | 9750 ms | 6 KiB/s | `SLOW_64K_SAMPLE_SUSPECT` |
+| 09:35:40 | 6087 ms | 10 KiB/s | `SLOW_64K_SAMPLE_SUSPECT` |
+
+This repeated slow-body finding is **worth additional comparison** but
+cannot be called the customer's Internet throughput, NPV throughput
+or filtering. The LED correctly reflects `PUBLIC_HTTPS_SLOW`
+after the first measured slow sample.
+
+**Interpretation and next-action gate:** The morning observation supports
+a *currently healthy measured SSH path*, with an outstanding clock-start
+delay and repeatedly slow public HTTPS samples. It does not validate
+overnight uptime or actual filtering. Before the next long monitoring
+session on a Windows PC, disable sleep while on AC power (screen-off is
+fine) and retain the PlatformIO `-f log2file` output. Verify the log
+file is actually progressing and obtain precise incident timestamps
+from an independent reference/client when possible.
+
 ## Remaining R1 hardware acceptance
 
 - [x] Healthy SSH path, pinned host key, and separate public HTTPS field runs
