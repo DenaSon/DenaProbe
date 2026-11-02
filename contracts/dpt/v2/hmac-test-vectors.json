@@ -7,12 +7,12 @@
   "secret_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   "headers": {
     "X-DPT-Device": "dp-lab-01",
-    "X-DPT-Key-Id": "k-test",
+    "X-DPT-Key-Id": "v2-test",
     "X-DPT-Sent-Uptime-Ms": "156000",
-    "X-DPT-Signature": "bOVcMQ_VBaf5Fu2RgZmlwGubhM47QsxhDRgcSZ3LYFc"
+    "X-DPT-Signature": "qostz2A9qpH5g_SWdMfHB4F9vJlq10-Xd4QpAfYbd4g"
   },
-  "canonical_ascii": "DPT2\nPOST\n/api/dpt/v2/telemetry\ndp-lab-01\nk-test\n156000\n01c3b4075cacf88c899e7652a360b5fae7b75863812da23b17c4a4e94b4d5889",
-  "expected_signature_base64url_nopad": "bOVcMQ_VBaf5Fu2RgZmlwGubhM47QsxhDRgcSZ3LYFc",
+  "canonical_ascii": "DPT2\nPOST\n/api/dpt/v2/telemetry\ndp-lab-01\nv2-test\n156000\n01c3b4075cacf88c899e7652a360b5fae7b75863812da23b17c4a4e94b4d5889",
+  "expected_signature_base64url_nopad": "qostz2A9qpH5g_SWdMfHB4F9vJlq10-Xd4QpAfYbd4g",
   "negative_cases": [
     "change a byte in body",
     "change signed path or method",
