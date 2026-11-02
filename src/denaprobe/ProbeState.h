@@ -11,6 +11,9 @@ public:
     bool stalled = false;
     bool localProbeError = false;
     bool sshLastMeasured = false;
+    bool deepLastMeasured = false;
+    uint16_t lastDeepCode = 90;
+    uint32_t deepLastResultAtMs = 0;
     bool httpsLastMeasured = false;
     Code lastSshCode = Code::SSH_CONNECT_ERROR;
     uint32_t lastSshResultAtMs = 0;
@@ -74,11 +77,22 @@ CurrentState currentState(uint32_t now, bool wifiConnected) const {
         }
     }
 
+    // When deep auth/forwarding is explicitly enabled, a pre-auth PASS
+    // cannot light a solid "ready" LED while deep evidence is absent,
+    // stale, locally unmeasurable, or actively failing.
+    const bool deepMissing = PROBE_DEEP_ENABLED &&
+        (!deepLastMeasured || now - deepLastResultAtMs > 3U * kProbeIntervalMs);
+    const bool deepLocal = PROBE_DEEP_ENABLED && deepLastMeasured &&
+        (lastDeepCode == 90 || lastDeepCode == 10 ||
+         lastDeepCode == 11 || lastDeepCode == 12);
+    const bool deepFailure = PROBE_DEEP_ENABLED && deepLastMeasured &&
+        lastDeepCode != 1 && !deepLocal && !deepMissing;
     if (!wifiConnected) {
         state.led = LedMode::WIFI_DOWN;
-    } else if (state.ssh == SshPathState::FAILURE) {
+    } else if (state.ssh == SshPathState::FAILURE || deepFailure) {
         state.led = LedMode::SSH_FAILURE;
-    } else if (state.ssh != SshPathState::PASS) {
+    } else if (state.ssh != SshPathState::PASS ||
+               deepMissing || deepLocal) {
         state.led = LedMode::UNKNOWN;
     } else if (state.https == PublicHttpsState::SLOW_SUSPECT) {
         state.led = LedMode::HTTPS_SLOW;
