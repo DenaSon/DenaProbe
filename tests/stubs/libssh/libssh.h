@@ -4,7 +4,7 @@ using ssh_session = void *;
 using ssh_key = void *;
 using ssh_buffer = void *;
 constexpr int SSH_OK = 0, SSH_AGAIN = -2, SSH_PACKET_NOT_USED = 0;
-constexpr int SSH_OPTIONS_HOST = 1, SSH_OPTIONS_PORT = 2, SSH_OPTIONS_TIMEOUT = 3;
+constexpr int SSH_OPTIONS_HOST = 1, SSH_OPTIONS_PORT = 2, SSH_OPTIONS_TIMEOUT = 3, SSH_OPTIONS_USER = 4;
 constexpr int SSH_PUBLICKEY_HASH_SHA256 = 1;
 inline void *ssh_new() { static int session; return &session; }
 inline void ssh_free(void *) {}
