@@ -33,7 +33,7 @@ raw_v2 = v2["body_utf8_exact"].encode("utf-8")
 hash_v2 = hashlib.sha256(raw_v2).hexdigest()
 assert hash_v2 == v2["body_sha256_lowercase_hex"]
 header_v2 = v2["headers"]
-assert header_v2["X-DPT-Key-Id"] == "k-test"  # synthetic public vector ONLY
+assert header_v2["X-DPT-Key-Id"] == "v2-test"  # synthetic public vector ONLY
 assert json.loads(raw_v2)["v"] == 2
 canonical_v2 = "\n".join([
     "DPT2", "POST", "/api/dpt/v2/telemetry",
