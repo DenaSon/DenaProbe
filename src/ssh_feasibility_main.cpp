@@ -374,6 +374,11 @@ void consumeEvent(const ProbeEvent &event) {
         probeState.sshLastMeasured = true;
         probeState.lastSshCode = event.ssh.code;
         probeState.lastSshResultAtMs = event.completedAtMs;
+        if (event.ssh.deep.measured) {
+            probeState.deepLastMeasured = true;
+            probeState.lastDeepCode = event.ssh.deep.code;
+            probeState.deepLastResultAtMs = event.ssh.deep.completedAtMs;
+        }
         printResult(event.ssh);
         quality.recordAndPrint(event.ssh);
         Serial.printf("[probe-event] type=SSH_RESULT | seq=%lu | "
