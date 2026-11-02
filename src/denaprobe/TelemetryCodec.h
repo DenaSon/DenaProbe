@@ -256,15 +256,15 @@ public:
     const char *bootId() const { return boot_; }
     const char *deviceId() const { return device_; }
 
-    // BOOT must be stored at collector before any result from this boot.
-    // Thereafter newer events are favored on backlog, which lets older
-    // records arrive as HISTORY_ONLY without falsely advancing live state.
-    int choose() const {
-        if (!count_) return -1;
-        if (messages_[0].kind == 3) return 0;
-        for (int i = count_ - 1; i >= 0; --i)
-            if (messages_[i].urgent) return i;
-        return count_ - 1;
+    // Strict FIFO: emit the oldest surviving sequence first, including BOOT.
+    // Jumping ahead to a newer sample caused the R2-C field failure:
+    // old samples were ACKed HISTORY_ONLY and fresh HTTPS never became live.
+    // Urgency starts an EARLY drain of the queue; it never reorders events.
+    int choose() const { return count_ ? 0 : -1; }
+    bool hasUrgent() const {
+        for (uint8_t i = 0; i < count_; ++i)
+            if (messages_[i].urgent) return true;
+        return false;
     }
     const Message *at(uint8_t index) const {
         return index < count_ ? &messages_[index] : nullptr;

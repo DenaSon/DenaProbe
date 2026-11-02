@@ -169,10 +169,13 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
             telemetryBatchActive = true;
         }
         if (!probeBusy) {
+            // Offline smoke must mirror the production FIFO choice and
+            // urgent-trigger behavior rather than simulating newest-first.
+            if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
             const int index = telemetryJournal.choose();
             const Dpt::Message *sample = index >= 0
                 ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
-            if (sample && (sample->urgent || telemetryBatchActive)) {
+            if (sample && telemetryBatchActive) {
                 Serial.printf("[dpt-smoke] WOULD_SEND_NOT_DELIVERED | "
                               "seq=%lu | kind=%u | length=%u | json=%s\n",
                               static_cast<unsigned long>(sample->sequence),
@@ -208,6 +211,19 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
                       static_cast<unsigned long>(completed.sequence), outcome,
                       completed.httpStatus,
                       static_cast<unsigned>(telemetryJournal.size()));
+        const Dpt::Message *front = telemetryJournal.at(0);
+        const bool bootRecord = front && front->kind == 3 &&
+                                front->sequence == completed.sequence;
+        // A BOOT older than Core's activation-age window is historical.
+        // Once the authenticated Collector is reachable again, restart the
+        // instrument to generate a fresh random BOOT; never send an
+        // unregistered stream that could be mistaken for live telemetry.
+        if (bootRecord && completed.kind == Dpt::Delivery::HISTORY_ONLY) {
+            Serial.println("[dpt-send] BOOT_HISTORY_ONLY | new_boot_required=1 | rebooting");
+            Serial.flush();
+            ESP.restart();
+            return;
+        }
         if (completed.kind == Dpt::Delivery::ACCEPTED ||
             completed.kind == Dpt::Delivery::DUPLICATE ||
             completed.kind == Dpt::Delivery::HISTORY_ONLY) {
@@ -215,23 +231,37 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
             telemetryRetries = 0;
             telemetryRetryDueMs = 0;
         } else if (completed.kind == Dpt::Delivery::REJECT) {
-            telemetryJournal.discard(completed.sequence);
-            telemetryRetries = 0;
-            telemetryRetryDueMs = 0;
+            if (bootRecord) {
+                // Invalid BOOT cannot be repaired by sending later probes.
+                telemetrySenderDisabled = true;
+                Serial.println("[dpt-send] BOOT_REJECTED | sender_paused=1");
+            } else {
+                telemetryJournal.discard(completed.sequence);
+                telemetryRetries = 0;
+                telemetryRetryDueMs = 0;
+            }
         } else if (completed.kind == Dpt::Delivery::SECURITY) {
             telemetrySenderDisabled = true;
         } else {
-            if (++telemetryRetries >= 6) {
+            // BOOT is mandatory for registration of every event in this boot.
+            // Exhausting the normal per-event budget MUST NOT discard it:
+            // otherwise the Collector can never promote this boot to live.
+            const bool bootPending = bootRecord;
+            if (telemetryRetries < 6) ++telemetryRetries;
+            if (telemetryRetries >= 6 && !bootPending) {
                 telemetryJournal.discard(completed.sequence);
                 telemetryRetries = 0;
                 telemetryRetryDueMs = 0;
                 Serial.println("[dpt-send] retry_budget_exhausted | gap=1");
             } else {
-                const uint32_t seconds = 5UL << (telemetryRetries - 1);
+                const uint32_t seconds = telemetryRetries >= 6
+                    ? 160UL : (5UL << (telemetryRetries - 1));
                 const uint32_t delayMs = (seconds > 160UL ? 160UL : seconds)
                     * 1000UL + (esp_random() % 1500UL);
                 telemetryRetryDueMs = millis() +
                     (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
+                if (bootPending && telemetryRetries >= 6)
+                    Serial.println("[dpt-send] BOOT_RETRY_BACKOFF | retained=1");
             }
             telemetryBatchActive = false;
         }
@@ -259,9 +289,14 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
         telemetryLastBatchMs = now;
         telemetryBatchActive = true;
     }
+    // An urgent fault may be behind older regular events. Begin draining
+    // immediately, but do not skip the earlier sequence(s). The Core only
+    // promotes strictly ordered fresh samples into device_latest_state.
+    if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
     const int index = telemetryJournal.choose();
-    const Dpt::Message *message = telemetryJournal.at(static_cast<uint8_t>(index));
-    if (!message || (!message->urgent && !telemetryBatchActive)) return;
+    const Dpt::Message *message = index >= 0
+        ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
+    if (!message || !telemetryBatchActive) return;
 
     // Copies the record before launching a worker; the journal can then
     // receive new samples without racing the sender's immutable body.
@@ -461,7 +496,14 @@ void loop() {
                     WiFi.status() == WL_CONNECTED);
 #endif
 
-    if (PROBE_HTTPS_QUALITY_ENABLED) {
+    // Signed HTTPS telemetry needs a validated TLS clock even when the
+    // optional public HTTPS quality probe is disabled by the operator.
+    const bool clockRequired = PROBE_HTTPS_QUALITY_ENABLED
+#ifndef DENAPROBE_HOST_TEST
+        || (telemetryReady && !PROBE_DPT_OFFLINE_SMOKE_TEST)
+#endif
+        ;
+    if (clockRequired) {
         const bool up = WiFi.status() == WL_CONNECTED;
         // DHCP must have assigned a usable IPv4 before SNTP setup.
         const bool ipv4Ready = up && WiFi.localIP()[0] != 0;
