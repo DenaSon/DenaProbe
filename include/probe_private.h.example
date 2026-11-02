@@ -10,3 +10,15 @@
 // Change these in the ignored local file if necessary.
 #define PROBE_LED_PIN 2
 #define PROBE_LED_ACTIVE_LOW 0
+
+// R3 Phase 2: opt-in only. The default remains OFF, including for all users.
+// Use a dedicated monitoring-only SSH key and restricted forwarding account.
+// Do NOT paste customer passwords or private keys into Git or an issue.
+#define PROBE_DEEP_ENABLED 0
+#define PROBE_DEEP_USER ""
+#define PROBE_DEEP_PRIVATE_KEY_B64 "" // LOCAL ignored file ONLY
+#define PROBE_DEEP_REMOTE_HOST "127.0.0.1"
+#define PROBE_DEEP_REMOTE_PORT 18180
+#define PROBE_DEEP_SAMPLE_BYTES 16384UL
+#define PROBE_DEEP_DWELL_MS 20000UL
+#define PROBE_DEEP_EVERY_N_CYCLES 2
