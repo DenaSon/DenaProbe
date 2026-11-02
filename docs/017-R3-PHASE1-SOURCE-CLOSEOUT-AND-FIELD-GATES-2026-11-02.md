@@ -1,6 +1,6 @@
 # R3 Phase 1 — ESP32 source closeout and physical acceptance gates
 **Date:** 2026-11-02. **Scope:** R2-A DPT/1 + R2-C FIFO and telemetry resilience. **NOT an R3 Phase 2 data-plane release.**
-**Status:** source fixes prepared in `feature/r2c-hardening-fifo-20261031`; GitHub checks/merge must be confirmed against exact final commits; **no production flash claimed**.
+**Status (2026-11-02): SOURCE-MERGED to `master` (DenaProbe PR #7 -> PR #6; master merge `b784ebeba8e25a08e84859ecef6a4c867026c1e9`). Final PR-head host-tests and PlatformIO builds passed; **live ESP32 flash / field acceptance NOT VERIFIED**, and post-merge master CI remains a separate check. No Phase 2 or Phase 3 activation.
 
 ## Reviewed change set
 - Existing R2-A telemetry remains opt-in: HMAC SHA256, private `telemetry_private.h`, pinned TLS CA, immutable per-boot payloads, exact signed ACK and volatile queue of 12 records; `esp32dev` legacy default remains unchanged.
