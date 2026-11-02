@@ -35,6 +35,7 @@
 #endif
 
 namespace DenaProbe {
+#if PROBE_DEEP_ENABLED
 inline bool deepSettingsValid() {
     return PROBE_DEEP_ENABLED && strlen(PROBE_DEEP_USER) >= 1 &&
            strlen(PROBE_DEEP_USER) <= 48 &&
@@ -166,4 +167,8 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
     out.sessionMs = millis() - started;
     out.completedAtMs = millis();
 }
+#else
+inline bool deepSettingsValid() { return false; }
+inline void runAuthenticatedDeep(ssh_session, DeepEvidence &) {}
+#endif
 } // namespace DenaProbe
