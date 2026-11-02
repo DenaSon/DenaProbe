@@ -224,17 +224,27 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
         } else if (completed.kind == Dpt::Delivery::SECURITY) {
             telemetrySenderDisabled = true;
         } else {
-            if (++telemetryRetries >= 6) {
+            // BOOT is mandatory for registration of every event in this boot.
+            // Exhausting the normal per-event budget MUST NOT discard it:
+            // otherwise the Collector can never promote this boot to live.
+            const Dpt::Message *oldest = telemetryJournal.at(0);
+            const bool bootPending = oldest &&
+                oldest->sequence == completed.sequence && oldest->kind == 3;
+            if (telemetryRetries < 6) ++telemetryRetries;
+            if (telemetryRetries >= 6 && !bootPending) {
                 telemetryJournal.discard(completed.sequence);
                 telemetryRetries = 0;
                 telemetryRetryDueMs = 0;
                 Serial.println("[dpt-send] retry_budget_exhausted | gap=1");
             } else {
-                const uint32_t seconds = 5UL << (telemetryRetries - 1);
+                const uint32_t seconds = telemetryRetries >= 6
+                    ? 160UL : (5UL << (telemetryRetries - 1));
                 const uint32_t delayMs = (seconds > 160UL ? 160UL : seconds)
                     * 1000UL + (esp_random() % 1500UL);
                 telemetryRetryDueMs = millis() +
                     (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
+                if (bootPending && telemetryRetries >= 6)
+                    Serial.println("[dpt-send] BOOT_RETRY_BACKOFF | retained=1");
             }
             telemetryBatchActive = false;
         }
@@ -469,7 +479,14 @@ void loop() {
                     WiFi.status() == WL_CONNECTED);
 #endif
 
-    if (PROBE_HTTPS_QUALITY_ENABLED) {
+    // Signed HTTPS telemetry needs a validated TLS clock even when the
+    // optional public HTTPS quality probe is disabled by the operator.
+    const bool clockRequired = PROBE_HTTPS_QUALITY_ENABLED
+#ifndef DENAPROBE_HOST_TEST
+        || (telemetryReady && !PROBE_DPT_OFFLINE_SMOKE_TEST)
+#endif
+        ;
+    if (clockRequired) {
         const bool up = WiFi.status() == WL_CONNECTED;
         // DHCP must have assigned a usable IPv4 before SNTP setup.
         const bool ipv4Ready = up && WiFi.localIP()[0] != 0;
