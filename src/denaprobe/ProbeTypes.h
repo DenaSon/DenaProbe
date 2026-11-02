@@ -41,6 +41,7 @@ struct TcpEvidence {
 };
 struct TransferEvidence {
     bool attempted = false;
+    bool channelOpened = false; // local aggregation only; not a wire value
     uint16_t code = 90;
     uint32_t requested = 0;
     uint32_t received = 0;
