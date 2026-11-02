@@ -447,6 +447,50 @@ int main() {
         assert(clock.at(0xfffffff8U) == 0xfffffff8ULL);
         assert(clock.at(0x00000018U) == (1ULL << 32) + 0x18U);
     });
+    check("R3 TCP preflight observed separately from preauth SSH", [] {
+        Fake::tcpOk = false;
+        Fake::tcpDelayMs = 2500;
+        const Result observed = runSshTransport();
+        assert(observed.tcp.measured && observed.tcp.code == 20);
+        assert(observed.tcp.elapsedMs == 2500 && Fake::tcpAttempts == 1);
+        // A passed SSH service handshake does not rewrite a failed TCP
+        // preflight observation into success or a VPN verdict.
+        assert(observed.code == Code::PASS);
+    });
+    check("DPT/2 journal encodes independent TCP and deep transfer samples", [] {
+        Dpt::Journal j;
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        assert(j.begin("dp-lte-01", boot, 1, 100, true, 2));
+        Result r{}; r.code = Code::PASS;
+        r.tcp.measured = true; r.tcp.code = 1; r.tcp.elapsedMs = 160;
+        r.deep.measured = true; r.deep.code = 20;
+        r.deep.authMs = 420; r.deep.sessionMs = 33000;
+        r.deep.first.attempted = true; r.deep.first.code = 1;
+        r.deep.first.requested = 16384; r.deep.first.received = 16384;
+        r.deep.first.elapsedMs = 1200;
+        r.deep.second.attempted = true; r.deep.second.code = 20;
+        r.deep.second.requested = 16384;
+        r.deep.second.elapsedMs = 12000;
+        assert(j.pushSsh(r, 34000, true, nullptr, 0, 33000, 70000));
+        const Dpt::Message *m = j.at(1);
+        assert(m && strstr(m->body, "\\"v\\":2") != nullptr);
+        assert(strstr(m->body, "\\"c\\":{") != nullptr);
+        assert(strstr(m->body, "\\"z\\":{") != nullptr);
+        assert(strstr(m->body, "\\"f\\":{") != nullptr);
+        assert(strstr(m->body, "\\"g\\":{") != nullptr);
+        assert(m->completedUptime == 34000);
+        assert(j.choose() == 0); // BOOT before evidence
+    });
+    check("DPT/2 ACK enforces v=2 without allowing a v1 replay", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        const char *raw = "{\\"v\\":2,\\"b\\":\\"57fce203c6e94baf8d32749c11f0a65d\\","
+                          "\\"q\\":2,\\"ack\\":{\\"r\\":0}}";
+        uint8_t ack = 255;
+        Dpt::AckParser parser(raw);
+        assert(parser.matches(boot, 2, ack, 2) && ack == 0);
+        Dpt::AckParser wrong(raw);
+        assert(!wrong.matches(boot, 2, ack));
+    });
     check("DPT/1 ACK accepts permuted exact identity and history-only", [] {
         const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
         const char *json = " { \"ack\" : {\"r\":2},\"q\":16,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"v\":1 } ";
