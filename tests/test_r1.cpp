@@ -473,18 +473,18 @@ int main() {
         r.deep.second.elapsedMs = 12000;
         assert(j.pushSsh(r, 34000, true, nullptr, 0, 33000, 70000));
         const Dpt::Message *m = j.at(1);
-        assert(m && strstr(m->body, "\\"v\\":2") != nullptr);
-        assert(strstr(m->body, "\\"c\\":{") != nullptr);
-        assert(strstr(m->body, "\\"z\\":{") != nullptr);
-        assert(strstr(m->body, "\\"f\\":{") != nullptr);
-        assert(strstr(m->body, "\\"g\\":{") != nullptr);
+        assert(m && strstr(m->body, "\"v\":2") != nullptr);
+        assert(strstr(m->body, "\"c\":{") != nullptr);
+        assert(strstr(m->body, "\"z\":{") != nullptr);
+        assert(strstr(m->body, "\"f\":{") != nullptr);
+        assert(strstr(m->body, "\"g\":{") != nullptr);
         assert(m->completedUptime == 34000);
         assert(j.choose() == 0); // BOOT before evidence
     });
     check("DPT/2 ACK enforces v=2 without allowing a v1 replay", [] {
         const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
-        const char *raw = "{\\"v\\":2,\\"b\\":\\"57fce203c6e94baf8d32749c11f0a65d\\","
-                          "\\"q\\":2,\\"ack\\":{\\"r\\":0}}";
+        const char *raw = "{\"v\":2,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\","
+                          "\"q\":2,\"ack\":{\"r\":0}}";
         uint8_t ack = 255;
         Dpt::AckParser parser(raw);
         assert(parser.matches(boot, 2, ack, 2) && ack == 0);
