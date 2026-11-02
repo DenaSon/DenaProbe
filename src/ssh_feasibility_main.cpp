@@ -211,6 +211,19 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
                       static_cast<unsigned long>(completed.sequence), outcome,
                       completed.httpStatus,
                       static_cast<unsigned>(telemetryJournal.size()));
+        const Dpt::Message *front = telemetryJournal.at(0);
+        const bool bootRecord = front && front->kind == 3 &&
+                                front->sequence == completed.sequence;
+        // A BOOT older than Core's activation-age window is historical.
+        // Once the authenticated Collector is reachable again, restart the
+        // instrument to generate a fresh random BOOT; never send an
+        // unregistered stream that could be mistaken for live telemetry.
+        if (bootRecord && completed.kind == Dpt::Delivery::HISTORY_ONLY) {
+            Serial.println("[dpt-send] BOOT_HISTORY_ONLY | new_boot_required=1 | rebooting");
+            Serial.flush();
+            ESP.restart();
+            return;
+        }
         if (completed.kind == Dpt::Delivery::ACCEPTED ||
             completed.kind == Dpt::Delivery::DUPLICATE ||
             completed.kind == Dpt::Delivery::HISTORY_ONLY) {
@@ -218,18 +231,22 @@ void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
             telemetryRetries = 0;
             telemetryRetryDueMs = 0;
         } else if (completed.kind == Dpt::Delivery::REJECT) {
-            telemetryJournal.discard(completed.sequence);
-            telemetryRetries = 0;
-            telemetryRetryDueMs = 0;
+            if (bootRecord) {
+                // Invalid BOOT cannot be repaired by sending later probes.
+                telemetrySenderDisabled = true;
+                Serial.println("[dpt-send] BOOT_REJECTED | sender_paused=1");
+            } else {
+                telemetryJournal.discard(completed.sequence);
+                telemetryRetries = 0;
+                telemetryRetryDueMs = 0;
+            }
         } else if (completed.kind == Dpt::Delivery::SECURITY) {
             telemetrySenderDisabled = true;
         } else {
             // BOOT is mandatory for registration of every event in this boot.
             // Exhausting the normal per-event budget MUST NOT discard it:
             // otherwise the Collector can never promote this boot to live.
-            const Dpt::Message *oldest = telemetryJournal.at(0);
-            const bool bootPending = oldest &&
-                oldest->sequence == completed.sequence && oldest->kind == 3;
+            const bool bootPending = bootRecord;
             if (telemetryRetries < 6) ++telemetryRetries;
             if (telemetryRetries >= 6 && !bootPending) {
                 telemetryJournal.discard(completed.sequence);
