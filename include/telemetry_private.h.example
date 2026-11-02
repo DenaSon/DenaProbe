@@ -15,3 +15,9 @@
 // PEM of a VERIFIED public CA trust anchor for the API host.
 // Never setInsecure() or disable the certificate hostname check.
 #define PROBE_DPT_CA_PEM ""
+
+// Opt-in experimental DPT/2 (Phase 2 source only; production remains DPT/1):
+// #define PROBE_DPT_PROTOCOL_VERSION 2
+// Switch PROBE_DPT_API_URL to .../api/dpt/v2/telemetry and provision a
+// separate v2-prefixed key ID + independent HMAC secret. Do not reuse k2.
+// Only the operator-controlled ignored telemetry_private.h may enable this.
