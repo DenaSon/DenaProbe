@@ -11,6 +11,7 @@
 #include <libssh/ssh2.h>
 #include "ProbeConfig.h"
 #include "ProbeTypes.h"
+#include "DeepSshProbe.h"
 
 // No authentication, SSH channel or NPV data-path operation in R1.
 // libssh progress callbacks are observational and MUST NOT consume packets.
@@ -151,6 +152,25 @@ Result runSshTransport() {
         return result;
     }
 
+    // Independent, bounded TCP connect; unlike ssh_connect() this verifies
+    // reachability before any KEX or authentication can start.
+    result.tcp.measured = true;
+    const uint32_t tcpStart = millis();
+    WiFiClient preflight;
+    const bool tcpOk = preflight.connect(address, PROBE_EDGE_PORT, 2500);
+    result.tcp.elapsedMs = millis() - tcpStart;
+    result.tcp.completedAtMs = millis();
+    preflight.stop();
+    if (WiFi.status() != WL_CONNECTED) {
+        result.code = Code::WIFI_LOST;
+        result.tcp.code = 90;
+        return result;
+    }
+    result.tcp.code = tcpOk ? 1 :
+        (result.tcp.elapsedMs >= 2400UL ? 20 : 22);
+    // A TCP failure does not replace the independent pre-auth SSH result;
+    // the SSH attempt remains separately observed in this cycle.
+
     // A new connection is used for the feasibility spike, not the v0.0.4
     // banner socket. Hostname is resolved every run; no Core IP is configured.
     const String resolvedIp = address.toString();
@@ -170,6 +190,11 @@ Result runSshTransport() {
         return result;
     }
 
+    if (deepSettingsValid() &&
+        ssh_options_set(owner.session, SSH_OPTIONS_USER, PROBE_DEEP_USER) != SSH_OK) {
+        result.code = Code::SSH_OPTIONS_FAILED;
+        return result;
+    }
     ssh_set_blocking(owner.session, 0);
     if (!owner.installObservers()) {
         result.code = Code::SSH_OPTIONS_FAILED;
@@ -248,11 +273,29 @@ Result runSshTransport() {
         result.code = Code::WIFI_LOST;
     } else if (rc == SSH_OK) {
         result.code = Code::PASS;
+        if (PROBE_DEEP_ENABLED) {
+            if (!deepSettingsValid()) {
+                result.deep.measured = true;
+                result.deep.code = 90;
+                result.deep.completedAtMs = millis();
+            } else {
+                // Deep probes are downsampled to bound hotspot LTE usage.
+                static uint32_t acceptedCycles = 0;
+                ++acceptedCycles;
+                if (acceptedCycles % PROBE_DEEP_EVERY_N_CYCLES == 0)
+                    runAuthenticatedDeep(owner.session, result.deep);
+            }
+        }
     } else if (rc == SSH_AGAIN) {
         result.code = Code::SERVICE_ACCEPT_TIMEOUT;
     } else {
         result.code = Code::SERVICE_REQUEST_ERROR;
     }
+    // The pre-auth SSH step can have succeeded *before* hotspot Wi-Fi fell
+    // during the deep witness; preserve that observation, but report w=0
+    // and z.s=90 instead of inventing a remote network outage.
+    if (result.deep.measured && WiFi.status() != WL_CONNECTED)
+        result.wifiRssiDbm = 0;
     return result;
 }
 

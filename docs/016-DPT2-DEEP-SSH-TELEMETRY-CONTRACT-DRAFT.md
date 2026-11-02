@@ -1,5 +1,5 @@
 # DPT/2 — draft transport contract for authenticated SSH measurements
-**Status: DRAFT, documentation + machine fixtures only, 2026-11-02. Not implemented, deployed, accepted or permitted for live devices yet.**
+**Status (2026-11-02): DRAFT contract with opt-in Phase 2 source implementation and CI fixtures; NOT enabled, deployed, hardware-accepted or permitted for live devices yet.**
 **Rationale:** Immutable DPT/1 has no independent TCP preflight or authenticated SSH/data-plane measurements. A breaking major version avoids misinterpreting old s=1 `SERVICE_ACCEPT_PASS` as NPV healthy.
 
 ## Artifact inventory
@@ -46,4 +46,4 @@ Filtering suspicion `INCONCLUSIVE/SUSPECTED/HIGH_CONFIDENCE` is a server interpr
 JSON Schema alone is insufficient; Collector MUST validate: HMAC and key version, no duplicate keys, k-kind restrictions, `z` only with `s=1`, timing bounds and monotonic age, transfer n <= r, full status implies n==r, terminal deep/status sample relationships, HTTPS freshness, unknown codes not actionable, valid registered target/revision, boot+sequence ordering and ACK matching. Add tests for D0 with missing z, first successful then second timed-out/connection reset, complete two-sample healthy, missing g, Wi-Fi down, stale h, payload-size >1024, altered signed input, bad host key, old DPT/1 coexistence and double-delivery.
 Reference implementation MUST match `hmac-test-vectors.json` exactly before accepting any DPT/2 request.
 
-**Security/release:** this is a draft contract for the approved roadmap, not an authorization to enable live SSH authentication or change NVLBot production. No firmware/collector/bot source edited by this documentation PR.
+**Security/release:** contract remains DRAFT through deferred Phase 3 and operator-run field acceptance. R3 source code on both repositories implements an opt-in sender/Collector; that does **not** authorize SSH account provisioning, live telemetry activation or NVLBot production changes. DPT/1 remains immutable.

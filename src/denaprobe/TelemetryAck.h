@@ -7,7 +7,8 @@ namespace DenaProbe { namespace Dpt {
 class AckParser {
 public:
     explicit AckParser(const char *p) : p_(p ? p : "") {}
-    bool matches(const char *boot, uint32_t q, uint8_t &ack) {
+    bool matches(const char *boot, uint32_t q, uint8_t &ack,
+                 uint8_t wireVersion = 1) {
         bool v = false, b = false, seq = false, haveAck = false;
         if (!take('{')) return false;
         for (int count = 0; count < 4; ++count) {
@@ -15,7 +16,7 @@ public:
             if (!keyString(key, sizeof(key)) || !take(':')) return false;
             if (strcmp(key, "v") == 0 && !v) {
                 uint64_t n;
-                if (!number(n) || n != 1) return false;
+                if (!number(n) || n != wireVersion) return false;
                 v = true;
             } else if (strcmp(key, "b") == 0 && !b) {
                 char id[40]{};

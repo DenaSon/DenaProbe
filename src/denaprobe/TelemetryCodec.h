@@ -152,9 +152,10 @@ inline bool validId(const char *id) {
 class Journal {
 public:
     bool begin(const char *deviceId, const char *bootId, uint16_t targetId,
-               uint64_t bootUptime, bool wifiUp) {
+               uint64_t bootUptime, bool wifiUp, uint8_t wireVersion = 1) {
         if (!validId(deviceId) || !bootId || strlen(bootId) != 32 ||
-            targetId == 0) return false;
+            targetId == 0 || (wireVersion != 1 && wireVersion != 2)) return false;
+        version_ = wireVersion;
         for (size_t i = 0; i < 32; ++i) {
             if (!((bootId[i] >= '0' && bootId[i] <= '9') ||
                   (bootId[i] >= 'a' && bootId[i] <= 'f'))) return false;
@@ -171,8 +172,9 @@ public:
         m.completedUptime = bootUptime;
         m.urgent = true;
         Writer w(m);
-        w.add("{\"v\":1,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
+        w.add("{\"v\":%u,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
               "\"u\":%llu,\"k\":3,\"w\":%u}",
+              static_cast<unsigned>(version_),
               device_, boot_, static_cast<unsigned long>(m.sequence),
               static_cast<unsigned long long>(bootUptime), wifiUp ? 1U : 0U);
         return w.good() && insert(m);
@@ -180,7 +182,8 @@ public:
 
     bool pushSsh(const Result &r, uint64_t completedUptime, bool wifiUp,
                  const HttpsQuality::Result *https = nullptr,
-                 uint64_t httpsUptime = 0) {
+                 uint64_t httpsUptime = 0, uint64_t tcpUptime = 0,
+                 uint64_t deepUptime = 0) {
         if (nextSequence_ == 0) return false;
         Message m{};
         m.sequence = next();
@@ -188,8 +191,9 @@ public:
         m.completedUptime = https ? httpsUptime : completedUptime;
         m.urgent = r.code != Code::PASS;
         Writer w(m);
-        w.add("{\"v\":1,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
+        w.add("{\"v\":%u,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
               "\"u\":%llu,\"k\":1,\"t\":%u,\"w\":%u",
+              static_cast<unsigned>(version_),
               device_, boot_, static_cast<unsigned long>(m.sequence),
               static_cast<unsigned long long>(completedUptime),
               static_cast<unsigned int>(targetId_), wifiUp ? 1U : 0U);
@@ -205,6 +209,31 @@ public:
             r.code == Code::SERVICE_ACCEPT_TIMEOUT ||
             r.code == Code::SERVICE_REQUEST_ERROR)
             w.add(",\"a\":%lu", static_cast<unsigned long>(r.serviceMs));
+        if (version_ == 2 && r.tcp.measured) {
+            w.add(",\"c\":{\"u\":%llu,\"s\":%u,\"ms\":%lu}",
+                  static_cast<unsigned long long>(tcpUptime),
+                  static_cast<unsigned>(r.tcp.code),
+                  static_cast<unsigned long>(r.tcp.elapsedMs));
+        }
+        if (version_ == 2 && r.deep.measured) {
+            w.add(",\"z\":{\"u\":%llu,\"s\":%u,\"am\":%lu,\"sm\":%lu",
+                  static_cast<unsigned long long>(deepUptime),
+                  static_cast<unsigned>(r.deep.code),
+                  static_cast<unsigned long>(r.deep.authMs),
+                  static_cast<unsigned long>(r.deep.sessionMs));
+            const TransferEvidence *samples[2] = {&r.deep.first, &r.deep.second};
+            for (uint8_t i = 0; i < 2; ++i) {
+                const TransferEvidence &transfer = *samples[i];
+                if (!transfer.attempted) continue;
+                w.add(",\"%c\":{\"s\":%u,\"r\":%lu,\"n\":%lu,\"ms\":%lu}",
+                      i == 0 ? 'f' : 'g',
+                      static_cast<unsigned>(transfer.code),
+                      static_cast<unsigned long>(transfer.requested),
+                      static_cast<unsigned long>(transfer.received),
+                      static_cast<unsigned long>(transfer.elapsedMs));
+            }
+            w.add("}");
+        }
         if (https) {
             w.add(",\"h\":{\"c\":%u,\"u\":%llu", httpsCode(https->status),
                   static_cast<unsigned long long>(httpsUptime));
@@ -243,8 +272,9 @@ public:
         m.urgent = urgent;
         m.completedUptime = completedUptime;
         Writer w(m);
-        w.add("{\"v\":1,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
+        w.add("{\"v\":%u,\"id\":\"%s\",\"b\":\"%s\",\"q\":%lu,"
               "\"u\":%llu,\"k\":2,\"w\":%u,\"s\":%u}",
+              static_cast<unsigned>(version_),
               device_, boot_, static_cast<unsigned long>(m.sequence),
               static_cast<unsigned long long>(completedUptime),
               wifiUp ? 1U : 0U, static_cast<unsigned int>(localCode));
@@ -305,6 +335,7 @@ private:
     uint32_t nextSequence_ = 1;
     uint32_t dropped_ = 0;
     uint16_t targetId_ = 1;
+    uint8_t version_ = 1;
     char device_[33]{};
     char boot_[33]{};
 };

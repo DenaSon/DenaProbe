@@ -16,6 +16,9 @@
 #ifndef PROBE_DPT_ENABLED
 #define PROBE_DPT_ENABLED 0
 #endif
+#ifndef PROBE_DPT_PROTOCOL_VERSION
+#define PROBE_DPT_PROTOCOL_VERSION 1
+#endif
 #ifndef PROBE_DPT_OFFLINE_SMOKE_TEST
 #define PROBE_DPT_OFFLINE_SMOKE_TEST 0
 #endif
@@ -65,7 +68,8 @@ inline bool decodeSecret(const char *hex, unsigned char key[32]) {
 }
 
 inline bool validSettings() {
-    if (!PROBE_DPT_ENABLED || !validId(PROBE_DPT_DEVICE_ID) ||
+    if (!PROBE_DPT_ENABLED || (PROBE_DPT_PROTOCOL_VERSION != 1 &&
+        PROBE_DPT_PROTOCOL_VERSION != 2) || !validId(PROBE_DPT_DEVICE_ID) ||
         strlen(PROBE_DPT_KEY_ID) < 1 || strlen(PROBE_DPT_KEY_ID) > 32 ||
         PROBE_DPT_TARGET_ID < 1 || PROBE_DPT_TARGET_ID > 65535 ||
         strlen(PROBE_DPT_CA_PEM) < 100) return false;
@@ -74,9 +78,12 @@ inline bool validSettings() {
                (*p >= 'A' && *p <= 'Z') ||
                (*p >= '0' && *p <= '9') ||
                *p == '-' || *p == '_')) return false;
+    if (PROBE_DPT_PROTOCOL_VERSION == 2 &&
+        strncmp(PROBE_DPT_KEY_ID, "v2-", 3) != 0) return false;
     const char *url = PROBE_DPT_API_URL;
     constexpr const char *prefix = "https://";
-    constexpr const char *suffix = "/api/dpt/v1/telemetry";
+    const char *suffix = PROBE_DPT_PROTOCOL_VERSION == 2
+        ? "/api/dpt/v2/telemetry" : "/api/dpt/v1/telemetry";
     const size_t len = strlen(url), slen = strlen(suffix);
     if (len <= strlen(prefix) + slen ||
         strncmp(url, prefix, strlen(prefix)) != 0 ||
@@ -108,9 +115,12 @@ inline bool signature(const Message &message, uint64_t sentUptime,
         hashHex[2 * i + 1] = hex[digest[i] & 15];
     }
     char toSign[240]{};
+    const char *domain = PROBE_DPT_PROTOCOL_VERSION == 2 ? "DPT2" : "DPT1";
+    const char *path = PROBE_DPT_PROTOCOL_VERSION == 2
+        ? "/api/dpt/v2/telemetry" : "/api/dpt/v1/telemetry";
     const int n = snprintf(toSign, sizeof(toSign),
-        "DPT1\nPOST\n/api/dpt/v1/telemetry\n%s\n%s\n%llu\n%s",
-        PROBE_DPT_DEVICE_ID, PROBE_DPT_KEY_ID,
+        "%s\nPOST\n%s\n%s\n%s\n%llu\n%s",
+        domain, path, PROBE_DPT_DEVICE_ID, PROBE_DPT_KEY_ID,
         static_cast<unsigned long long>(sentUptime), hashHex);
     if (n < 0 || static_cast<size_t>(n) >= sizeof(toSign)) {
         memset(secret, 0, sizeof(secret)); return false;
@@ -207,7 +217,8 @@ inline DeliveryResult deliver(const Message &message, uint64_t sendUptime,
                 received == static_cast<int>(sink.size()) && sink.size() > 0) {
                 uint8_t ack = 255;
                 AckParser parser(sink.body());
-                if (parser.matches(bootId, message.sequence, ack)) {
+                if (parser.matches(bootId, message.sequence, ack,
+                                   PROBE_DPT_PROTOCOL_VERSION)) {
                     result.kind = ack == 0 ? Delivery::ACCEPTED :
                         ack == 1 ? Delivery::DUPLICATE : Delivery::HISTORY_ONLY;
                 } else result.kind = Delivery::SECURITY;

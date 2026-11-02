@@ -25,6 +25,16 @@ struct WiFiStub {
     void setAutoReconnect(bool) {}
 };
 inline WiFiStub WiFi;
+class WiFiClient {
+public:
+    bool connect(IPAddress, uint16_t, int32_t timeout_ms) {
+        ++Fake::tcpAttempts;
+        Fake::tick(Fake::tcpDelayMs > static_cast<uint32_t>(timeout_ms)
+                       ? static_cast<uint32_t>(timeout_ms) : Fake::tcpDelayMs);
+        return Fake::wifi && Fake::tcpOk;
+    }
+    void stop() {}
+};
 inline void configTime(long, int, const char *, const char *) {
     ++Fake::sntpConfigCalls;
 }
