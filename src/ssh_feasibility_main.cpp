@@ -66,6 +66,8 @@ bool telemetryReady = false;
 bool telemetryPendingHttps = false;
 Result telemetryPendingSsh{};
 uint64_t telemetryPendingSshAt = 0;
+uint64_t telemetryPendingTcpAt = 0;
+uint64_t telemetryPendingDeepAt = 0;
 bool telemetryPendingWifi = false;
 
 QueueHandle_t telemetryCompletionQueue = nullptr;
@@ -124,7 +126,8 @@ void telemetryBoot() {
         bootId,
         static_cast<uint16_t>(PROBE_DPT_OFFLINE_SMOKE_TEST ?
                               1 : PROBE_DPT_TARGET_ID),
-        telemetryUptime.now(), WiFi.status() == WL_CONNECTED);
+        telemetryUptime.now(), WiFi.status() == WL_CONNECTED,
+        PROBE_DPT_PROTOCOL_VERSION);
     telemetryLastBatchMs = millis();
     Serial.printf("[dpt] %s | version=1 | mode=%s | queue_capacity=%u | "
                   "period_ms=%lu | one_event_per_post=1 | detection=SERVER_ONLY\n",
@@ -139,13 +142,19 @@ void telemetryOnSsh(const ProbeEvent &event) {
     telemetryPendingHttps = !event.workerFinished;
     telemetryPendingSsh = event.ssh;
     telemetryPendingSshAt = telemetryUptime.at(event.completedAtMs);
+    telemetryPendingTcpAt = event.ssh.tcp.measured
+        ? telemetryUptime.at(event.ssh.tcp.completedAtMs) : 0;
+    telemetryPendingDeepAt = event.ssh.deep.measured
+        ? telemetryUptime.at(event.ssh.deep.completedAtMs) : 0;
     // Capture the link as observed by the SSH probe, not a potentially
     // changed Wi-Fi state at main-loop consumption time.
     telemetryPendingWifi = event.ssh.code != Code::WIFI_LOST &&
                            event.ssh.wifiRssiDbm < 0;
     if (!telemetryPendingHttps) {
         telemetryJournal.pushSsh(telemetryPendingSsh,
-                                 telemetryPendingSshAt, telemetryPendingWifi);
+                                 telemetryPendingSshAt, telemetryPendingWifi,
+                                 nullptr, 0, telemetryPendingTcpAt,
+                                 telemetryPendingDeepAt);
     }
 }
 void telemetryOnHttps(const ProbeEvent &event) {
@@ -154,7 +163,8 @@ void telemetryOnHttps(const ProbeEvent &event) {
     // The authenticated JSON body is immutable once placed in the journal.
     telemetryJournal.pushSsh(telemetryPendingSsh, telemetryPendingSshAt,
                              telemetryPendingWifi, &event.https,
-                             telemetryUptime.at(event.completedAtMs));
+                             telemetryUptime.at(event.completedAtMs),
+                             telemetryPendingTcpAt, telemetryPendingDeepAt);
     telemetryPendingHttps = false;
 }
 
@@ -420,7 +430,11 @@ void setup() {
                   static_cast<unsigned int>(DenaProbe::kQualityWindowSamples),
                   static_cast<unsigned long>(PROBE_QUALITY_HEALTHY_TRANSPORT_MS),
                   static_cast<unsigned long>(PROBE_QUALITY_ALERT_RATIO_PERCENT));
-    Serial.println("[scope] SSH transport + pinned host key + service accept; no auth");
+    Serial.printf("[scope] preauth=YES | tcp_preflight=YES | "
+                  "deep_auth_opt_in=%u | dpt_wire=%u | "
+                  "filtering_verdict=SERVER_ONLY\n",
+                  static_cast<unsigned>(PROBE_DEEP_ENABLED),
+                  static_cast<unsigned>(PROBE_DPT_PROTOCOL_VERSION));
 
     uint8_t pin[32] = {};
     probeState.validConfig =
