@@ -32,7 +32,33 @@ struct StageTrace {
     bool transportVerified = false;
 };
 
+// DPT/2: all fields are observations, never filtering decisions.
+struct TcpEvidence {
+    bool measured = false;
+    uint16_t code = 90;        // LOCAL_UNMEASURABLE until a socket was attempted
+    uint32_t elapsedMs = 0;
+    uint32_t completedAtMs = 0;
+};
+struct TransferEvidence {
+    bool attempted = false;
+    uint16_t code = 90;
+    uint32_t requested = 0;
+    uint32_t received = 0;
+    uint32_t elapsedMs = 0;
+};
+struct DeepEvidence {
+    bool measured = false;
+    uint16_t code = 90;        // deep-session status
+    uint32_t completedAtMs = 0;
+    uint32_t authMs = 0;
+    uint32_t sessionMs = 0;
+    TransferEvidence first{};
+    TransferEvidence second{};
+};
+
 struct Result {
+    TcpEvidence tcp{};
+    DeepEvidence deep{};
     Code code;
     StageTrace stages;
     uint32_t dnsMs;
