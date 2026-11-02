@@ -10,6 +10,13 @@ public:
     bool sshDue(uint32_t now) const {
         return firstSshDue_ || now - lastSshStartMs_ >= kProbeIntervalMs;
     }
+    // Reserve a quiet interval before the next SSH measurement for
+    // memory-heavy TLS uploads. This only affects the optional sender.
+    bool sshDueWithin(uint32_t now, uint32_t leadMs) const {
+        const uint32_t elapsed = now - lastSshStartMs_;
+        return firstSshDue_ || elapsed >= kProbeIntervalMs ||
+               kProbeIntervalMs - elapsed <= leadMs;
+    }
     void markSshStarted(uint32_t now) {
         firstSshDue_ = false;
         lastSshStartMs_ = now;

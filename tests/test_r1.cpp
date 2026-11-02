@@ -1,4 +1,5 @@
 #include "../src/ssh_feasibility_main.cpp"
+#include "../src/denaprobe/TelemetryAck.h"
 #include <iostream>
 #include <initializer_list>
 #include <string>
@@ -331,5 +332,155 @@ int main() {
         workerRunning = false; Fake::now += 30000; loop();
         assert(Fake::taskCreates == 0);
     });
-    std::cout << tests << " R1 host cases passed (simulated peripherals; hardware pending)\n";
+    check("DPT/1 numeric registry SSH paths and milestones", [] {
+        Result r{};
+        r.code = Code::PASS;
+        r.stages.bannerMs = 418; r.stages.kexInitTxMs = 424;
+        r.stages.kexInitRxMs = 621; r.stages.algorithmsMs = 624;
+        r.stages.newkeysRxMs = 2044; r.stages.transportVerified = true;
+        assert(Dpt::code(r.code) == 1 && Dpt::stage(r) == 52);
+        assert(Dpt::observations(r) == 255);
+        r.code = Code::SERVICE_ACCEPT_TIMEOUT;
+        assert(Dpt::code(r.code) == 50 && Dpt::stage(r) == 51);
+        assert(Dpt::observations(r) == 127);
+        r.code = Code::SSH_CONNECT_TIMEOUT; r.stages = {};
+        assert(Dpt::code(r.code) == 30 && Dpt::stage(r) == 30);
+        assert(Dpt::observations(r) == 0);
+        r.code = Code::HOST_KEY_MISMATCH;
+        assert(Dpt::code(r.code) == 41 && Dpt::stage(r) == 40);
+        assert(Dpt::httpsCode(HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT) == 2);
+    });
+    check("DPT/1 boot, seq and HTTPS subobject are immutable per event", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 100, false));
+        assert(j.size() == 1 && j.at(0)->sequence == 1);
+        assert(std::string(j.at(0)->body).find("\"k\":3") != std::string::npos);
+        Result r{}; r.code = Code::PASS; r.wifiRssiDbm = -48;
+        r.transportMs = 3320; r.serviceMs = 198; r.stages.startedAt = 160;
+        r.stages.transportVerified = true;
+        assert(j.pushSsh(r, 500, true));
+        assert(j.at(1)->sequence == 2 && j.at(1)->kind == 1);
+        assert(std::string(j.at(1)->body).find("\"h\":") == std::string::npos);
+        HttpsQuality::Result h{};
+        h.status = HttpsQuality::Status::SLOW_64K_SAMPLE_SUSPECT;
+        h.bytes = 65536; h.bodyTransferMs = 4200; h.httpCode = 200;
+        h.totalMs = 7700; h.headersMs = 3490; h.firstBodyMs = 3510;
+        assert(j.pushSsh(r, 700, true, &h, 8700));
+        assert(j.at(2)->sequence == 3 && j.at(2)->completedUptime == 8700);
+        assert(std::string(j.at(2)->body).find("\"h\":{\"c\":2,\"u\":8700") != std::string::npos);
+        assert(std::string(j.at(2)->body).find("\"n\":65536,\"bt\":4200") != std::string::npos);
+        assert(j.at(2)->length == strlen(j.at(2)->body));
+        assert(j.size() == 3 && j.choose() == 0); // BOOT first.
+        j.remove(1);
+        assert(j.choose() == 0 && j.at(j.choose())->sequence == 2);
+        // Both regular results preserve FIFO instead of newest-first.
+        j.remove(2);
+        assert(j.choose() == 0 && j.at(j.choose())->sequence == 3);
+    });
+    check("DPT/1 urgent event starts FIFO drain without bypassing old results", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 100, false));
+        Result healthy{}; healthy.code = Code::PASS;
+        Result failed{}; failed.code = Code::SSH_CONNECT_TIMEOUT;
+        assert(j.pushSsh(healthy, 200, true));   // q=2 regular
+        assert(j.pushSsh(healthy, 300, true));   // q=3 regular
+        assert(j.pushSsh(failed, 400, true));    // q=4 urgent
+        assert(j.hasUrgent() && j.choose() == 0);
+        for (unsigned expected = 1; expected <= 4; ++expected) {
+            const auto *message = j.at(j.choose());
+            assert(message && message->sequence == expected);
+            j.remove(expected); // Only after a matched durable ACK.
+        }
+        assert(!j.hasUrgent() && j.size() == 0 && j.choose() == -1);
+    });
+    check("DPT/1 local urgency is queued and kept strictly ordered", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 100, true));
+        Result healthy{}; healthy.code = Code::PASS;
+        assert(j.pushSsh(healthy, 200, true)); // q=2
+        assert(j.pushLocal(92, 300, true));   // q=3, urgent
+        j.remove(1);
+        assert(j.hasUrgent() && j.at(j.choose())->sequence == 2);
+        j.remove(2);
+        assert(j.at(j.choose())->sequence == 3);
+        j.remove(3);
+        assert(!j.hasUrgent() && j.choose() == -1);
+    });
+    check("DPT/1 queue bounded; pending BOOT cannot be evicted", [] {
+        Dpt::Journal j;
+        assert(j.begin("dp-lte-01", "57fce203c6e94baf8d32749c11f0a65d",
+                       1, 12, true));
+        Result r{}; r.code = Code::DNS_FAIL;
+        for (int i = 0; i < 18; ++i) assert(j.pushSsh(r, 100 + i, true));
+        assert(j.size() == Dpt::kQueueCapacity && j.dropped() == 7);
+        assert(j.at(0)->kind == 3 && j.at(0)->sequence == 1);
+        assert(j.choose() == 0);
+        j.remove(1);
+        // q2..q8 are explicitly lost. The survivors remain ordered, never
+        // relabeled as continuous; the collector must keep a monitoring gap.
+        assert(j.at(j.choose())->sequence == 9);
+        for (uint32_t seq = 9; seq <= 19; ++seq) {
+            assert(j.at(j.choose())->sequence == seq);
+            j.remove(seq);
+        }
+        assert(j.size() == 0 && j.choose() == -1);
+    });
+    check("Telemetry sender reserves SSH due window and preserves cadence", [] {
+        ProbeScheduler schedule;
+        assert(schedule.sshDueWithin(0, 18000));
+        schedule.markSshStarted(0);
+        assert(!schedule.sshDueWithin(9000, 18000));
+        assert(schedule.sshDueWithin(12000, 18000));
+        assert(schedule.sshDueWithin(30000, 18000));
+        schedule.markSshStarted(30000);
+        assert(!schedule.sshDueWithin(39000, 18000));
+        assert(schedule.sshDueWithin(42000, 18000));
+    });
+    check("DPT/1 uptime is monotonic across wrap and preserves completion", [] {
+        Dpt::ExtendedUptime clock;
+        clock.update(0xfffffff0U);
+        clock.update(0x00000020U);
+        assert(clock.now() == (1ULL << 32) + 0x20U);
+        assert(clock.at(0xfffffff8U) == 0xfffffff8ULL);
+        assert(clock.at(0x00000018U) == (1ULL << 32) + 0x18U);
+    });
+    check("DPT/1 ACK accepts permuted exact identity and history-only", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        const char *json = " { \"ack\" : {\"r\":2},\"q\":16,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"v\":1 } ";
+        uint8_t ack = 255;
+        Dpt::AckParser p(json);
+        assert(p.matches(boot, 16, ack) && ack == 2);
+    });
+    check("DPT/1 duplicate ACK is safe and uses same event identity", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        uint8_t ack = 255;
+        const char *json =
+          "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\","
+          "\"q\":2,\"ack\":{\"r\":1}}";
+        Dpt::AckParser p(json);
+        assert(p.matches(boot, 2, ack) && ack == 1);
+        Dpt::AckParser wrong(json);
+        assert(!wrong.matches(boot, 3, ack));
+    });
+    check("DPT/1 ACK rejects stale/mismatched, duplicate and garbage fields", [] {
+        const char *boot = "57fce203c6e94baf8d32749c11f0a65d";
+        const char *bad[] = {
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":17,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65e\",\"q\":16,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":3}}",
+            "{\"v\":1,\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0,\"x\":2}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":016,\"ack\":{\"r\":0}}",
+            "{\"v\":1,\"b\":\"57fce203c6e94baf8d32749c11f0a65d\",\"q\":16,\"ack\":{\"r\":0}} extra"
+        };
+        for (const char *json : bad) {
+            uint8_t ack = 255;
+            Dpt::AckParser p(json);
+            assert(!p.matches(boot, 16, ack));
+        }
+    });
+    std::cout << tests << " R1 + DPT/1 host cases passed (simulated peripherals; hardware pending)\n";
 }

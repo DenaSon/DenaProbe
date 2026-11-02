@@ -1,10 +1,10 @@
 # DenaProbe Telemetry Protocol — DPT/1
 
-**Contract:** `DPT/1` · **Status:** normative design baseline; **not implemented or deployed** · **Owner:** DenaProbe ↔ NVLBot · **Language:** UTF-8; all machine codes are stable numeric values.
+**Contract:** `DPT/1` · **Status (2026-10-31):** implemented experimentally in ESP32 R2-A + isolated Core R2-B; real signed transport field-tested; live-state hardening awaiting CI/hardware validation · **Owner:** DenaProbe ↔ NVLBot · **Language:** UTF-8; all machine codes are stable numeric values.
 
 > **Scope boundary:** DPT transports observations from the ESP32 Wi-Fi / hotspot vantage point. It does not test NPV authentication, tunneled payload, Telegram delivery, LTE RSSI, cellular packet loss, or determine censorship. `SSH_SERVICE_ACCEPT_PASS` is not `VPN_OK`. Backend incident decisions are interpretations of multiple observations; the device never transmits an asserted filtering verdict.
 
-This is the **single cross-platform source of truth** for a future firmware refactor and NVLBot ingest implementation. Do not implement by guessing C++ enum ordinals. The companion machine-readable files are:
+This is the **single cross-platform source of truth** for the experimental firmware sender and isolated Core Collector; integration into NVLBot alerts remains unimplemented. Do not use C++ enum ordinals. The companion machine-readable files are:
 
 - `contracts/dpt/v1/code-registry.json` — frozen wire values, independent namespaces;
 - `contracts/dpt/v1/telemetry.schema.json` — structural payload validation (JSON Schema 2020-12);
@@ -12,7 +12,7 @@ This is the **single cross-platform source of truth** for a future firmware refa
 - `contracts/dpt/v1/hmac-test-vectors.json` — exact public HMAC/SHA-256 signing test vector;
 - `contracts/dpt/v1/ack.schema.json` — durable ingestion response schema.
 
-Both sides MUST use the same released contract version and conformance fixtures. DPT/1 is **not** currently an HTTP route, firmware feature, DB table, or notification job.
+Both sides MUST use the same released contract version and conformance fixtures. DPT/1 **is** now an experimental HTTPS Collector endpoint, firmware sender and dedicated SQLite journal; it is **not** a production NVLBot notification or filtering-decision service.
 
 ## 1. Normative vocabulary and invariants
 
@@ -29,7 +29,7 @@ Both sides MUST use the same released contract version and conformance fixtures.
 ## 2. Transport
 
 - Method: `POST`
-- Path: `/api/dpt/v1/telemetry` (planned endpoint; API must be explicitly added in NVLBot)
+- Path: `/api/dpt/v1/telemetry` (implemented by the isolated Core Collector behind the Cloudflare Tunnel; **not** a route within NVLBot).
 - Scheme: **HTTPS only**, with normal certificate chain and hostname verification. No insecure TLS, plaintext downgrade, URL redirects, SSH passwords, or user account tokens.
 - Content type: `application/json`, UTF-8. Compact serialization preferred, but **do not depend on JSON key order** for semantics. No floats, NaN, Infinity, comments, BOM, or duplicate JSON object keys.
 - Device request body size: **maximum 1,024 bytes** (reject HTTP 413). A normal result should be a few hundred bytes; do not claim all cellular usage is only body bytes (TLS/HTTP overhead exists).
@@ -287,7 +287,7 @@ HTTP response handling:
 | `413` payload too large | Fix client; do not fragment silently |
 | `429` / `5xx` / timeout | Exponential backoff + jitter, bounded retries / queue; honor `Retry-After` when reasonable |
 
-Use small bounded RAM queue; prioritize newest live samples for low latency **without deleting or relabeling any older retained sample**. Policy MUST specify capacity, drop accounting and replay limits before implementation. On overflow, drop by documented deterministic policy, increase a counter and report a separate gap metric when connection returns. No per-30s writes to flash in MVP; RAM queue is lost on reset and this MUST be visible as a monitoring gap. Do not retry indefinitely. Device remains usable as local monitor if API unavailable.
+Use a small bounded RAM queue. **R2-C hardening policy:** send retained events in strictly increasing per-boot sequence order (FIFO). Urgent failures **trigger early draining** but MUST NOT overtake older pending `q` messages. The first acknowledged BOOT precedes all results. On overflow, drop deterministically (oldest non-BOOT), increment a counter, preserve the numeric sequence gaps and NEVER relabel, fabricate or rewrite surviving immutable events. A bounded queue cannot guarantee lossless delivery; a gap must be treated as missing evidence, and confidence can recover only after new corroborating fresh SSH results. No per-30s flash writes in MVP; RAM loss on reset requires new BOOT. Do not retry indefinitely or call missing delivery an SSH failure. A device remains usable as a local monitor if the API is unavailable.
 
 ## 9. Backend storage, freshness, state and alert interpretation
 
@@ -320,7 +320,7 @@ Minimum logical entities (not final table migrations):
 
 **Validation layering:** the JSON Schema validates types, lengths and required shape. It intentionally permits **unknown future numeric status/stage/HTTPS codes** within reserved unsigned ranges so older receivers can store them safely. An additional semantic validator, driven by the registry plus this specification, checks codes, bit-mask invariants, sample age, kind-specific eligibility and freshness. Unknown values MUST NOT silently become known codes or trigger alerts.
 
-## 11. Conformance and release gate (implementation not started)
+## 11. Conformance and release gate (experimental implementation, incomplete field acceptance)
 
 Firmware and backend refactor MUST supply test fixtures for all registries, not just successful `s=1`:
 - Serializer + parser roundtrip, UTF-8, 1 KiB limit, missing vs measured-zero, malformed/unknown codes and version handling.
@@ -350,4 +350,4 @@ No SIM800L, LTE modem, SMS, NPV/SSH account login, UDPGW 7300, VPN traffic, raw 
 
 As of drafting, `src/ssh_feasibility_main.cpp` defines `Code`, `StageTrace`, `stopStage()` and 30s/12-sample quality statistics; `src/https_quality.h` defines HTTP/TLS/body result statuses and 180s independent 64KiB checks. These are **source states, not wire-compatible DPT implementations**. Some local faults such as stalled worker have no existing result queue sample; they require explicit event serialization during the refactor. The device’s current LED and 12-sample rolling window are **not transmitted** as ground truth. Field observations to date support healthy SSH/HTTPS behavior; controlled failure-path/LED validation and full audit reproduction remain open.
 
-*Contract authoring branch: `feature/1b-ssh-feasibility-20261029`. Documentation only; no firmware/backend patch or master merge.*
+*Original contract authoring branch: `feature/1b-ssh-feasibility-20261029`. The experimental R2-A/R2-B implementations and R2-C hardening branches now exist, but neither automatic alerts nor master merges are implied. See [R2-C hardening](014-R2C-HARDENING-FIFO-LIVE-STATE-2026-10-31.md).*

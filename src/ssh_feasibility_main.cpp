@@ -32,6 +32,14 @@
 #include "denaprobe/StatusLed.h"
 #include "denaprobe/ProbeQuality.h"
 #include "denaprobe/ProbeDiagnostics.h"
+#include "denaprobe/TelemetryCodec.h"
+#ifndef DENAPROBE_HOST_TEST
+#include <esp_system.h>
+#if __has_include("telemetry_private.h")
+#include "telemetry_private.h"
+#endif
+#include "denaprobe/TelemetryTransport.h"
+#endif
 
 namespace {
 using namespace DenaProbe;
@@ -48,6 +56,260 @@ uint32_t workerStartMs = 0;
 uint32_t lastWiFiAttemptMs = 0;
 bool wifiStatusInitialized = false;
 bool previousWifiConnected = false;
+
+#ifndef DENAPROBE_HOST_TEST
+// Telemetry is deliberately optional until a DPT/1 collector exists.
+// No sender and no secrets are needed for legacy R1 local operation.
+Dpt::Journal telemetryJournal;
+Dpt::ExtendedUptime telemetryUptime;
+bool telemetryReady = false;
+bool telemetryPendingHttps = false;
+Result telemetryPendingSsh{};
+uint64_t telemetryPendingSshAt = 0;
+bool telemetryPendingWifi = false;
+
+QueueHandle_t telemetryCompletionQueue = nullptr;
+Dpt::Message telemetryInFlight{};
+uint64_t telemetrySendAt = 0;
+bool telemetrySending = false;
+bool telemetrySenderDisabled = false;
+bool telemetryBatchActive = false;
+bool telemetryStallLogged = false;
+uint32_t telemetryLastBatchMs = 0;
+uint32_t telemetryStartedSendMs = 0;
+uint32_t telemetryRetryDueMs = 0;
+uint8_t telemetryRetries = 0;
+uint32_t telemetryLastDropped = 0;
+
+void telemetryWorker(void *) {
+    const Dpt::DeliveryResult outcome =
+        Dpt::deliver(telemetryInFlight, telemetrySendAt,
+                     telemetryJournal.bootId());
+    xQueueSend(telemetryCompletionQueue, &outcome, portMAX_DELAY);
+    vTaskDelete(nullptr);
+}
+
+void telemetryBoot() {
+    if (PROBE_DPT_ENABLED && PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        Serial.println("[dpt] disabled | reason=ONLINE_AND_SMOKE_MUTUALLY_EXCLUSIVE");
+        return;
+    }
+    if (!PROBE_DPT_ENABLED && !PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        Serial.println("[dpt] disabled | collector=NOT_CONFIGURED");
+        return;
+    }
+    if (!PROBE_DPT_OFFLINE_SMOKE_TEST && !Dpt::validSettings()) {
+        Serial.println("[dpt] disabled | reason=INVALID_LOCAL_CONFIG");
+        return;
+    }
+    if (!PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        telemetryCompletionQueue = xQueueCreate(1, sizeof(Dpt::DeliveryResult));
+        if (!telemetryCompletionQueue) {
+            Serial.println("[dpt] disabled | reason=QUEUE_ALLOC_FAILED");
+            return;
+        }
+    }
+    uint8_t randomBoot[16]{};
+    esp_fill_random(randomBoot, sizeof(randomBoot));
+    char bootId[33]{};
+    constexpr char hex[] = "0123456789abcdef";
+    for (uint8_t i = 0; i < sizeof(randomBoot); ++i) {
+        bootId[2 * i] = hex[randomBoot[i] >> 4];
+        bootId[2 * i + 1] = hex[randomBoot[i] & 0x0f];
+    }
+    memset(randomBoot, 0, sizeof(randomBoot));
+    telemetryUptime.update(millis());
+    telemetryReady = telemetryJournal.begin(
+        PROBE_DPT_OFFLINE_SMOKE_TEST ? "dp-smoke" : PROBE_DPT_DEVICE_ID,
+        bootId,
+        static_cast<uint16_t>(PROBE_DPT_OFFLINE_SMOKE_TEST ?
+                              1 : PROBE_DPT_TARGET_ID),
+        telemetryUptime.now(), WiFi.status() == WL_CONNECTED);
+    telemetryLastBatchMs = millis();
+    Serial.printf("[dpt] %s | version=1 | mode=%s | queue_capacity=%u | "
+                  "period_ms=%lu | one_event_per_post=1 | detection=SERVER_ONLY\n",
+                  telemetryReady ? "READY" : "DISABLED",
+                  PROBE_DPT_OFFLINE_SMOKE_TEST ? "OFFLINE_SMOKE_NO_NETWORK" : "HTTPS_SENDER",
+                  static_cast<unsigned>(Dpt::kQueueCapacity),
+                  static_cast<unsigned long>(Dpt::kNormalFlushMs));
+}
+
+void telemetryOnSsh(const ProbeEvent &event) {
+    if (!telemetryReady) return;
+    telemetryPendingHttps = !event.workerFinished;
+    telemetryPendingSsh = event.ssh;
+    telemetryPendingSshAt = telemetryUptime.at(event.completedAtMs);
+    // Capture the link as observed by the SSH probe, not a potentially
+    // changed Wi-Fi state at main-loop consumption time.
+    telemetryPendingWifi = event.ssh.code != Code::WIFI_LOST &&
+                           event.ssh.wifiRssiDbm < 0;
+    if (!telemetryPendingHttps) {
+        telemetryJournal.pushSsh(telemetryPendingSsh,
+                                 telemetryPendingSshAt, telemetryPendingWifi);
+    }
+}
+void telemetryOnHttps(const ProbeEvent &event) {
+    if (!telemetryReady || !telemetryPendingHttps) return;
+    // A new HTTPS subobject belongs only to the SSH cycle that launched it.
+    // The authenticated JSON body is immutable once placed in the journal.
+    telemetryJournal.pushSsh(telemetryPendingSsh, telemetryPendingSshAt,
+                             telemetryPendingWifi, &event.https,
+                             telemetryUptime.at(event.completedAtMs));
+    telemetryPendingHttps = false;
+}
+
+void telemetryUpdate(uint32_t now, bool probeBusy, bool wifiUp) {
+    if (!telemetryReady) return;
+    if (PROBE_DPT_OFFLINE_SMOKE_TEST) {
+        // Deterministic on-board smoke test: measure and encode real SSH/HTTPS,
+        // then display an opaque-ID event WITHOUT contacting any server.
+        // Removal here is NOT an ACK and MUST NOT be used as live delivery.
+        if (now - telemetryLastBatchMs >= Dpt::kNormalFlushMs) {
+            telemetryLastBatchMs = now;
+            telemetryBatchActive = true;
+        }
+        if (!probeBusy) {
+            // Offline smoke must mirror the production FIFO choice and
+            // urgent-trigger behavior rather than simulating newest-first.
+            if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
+            const int index = telemetryJournal.choose();
+            const Dpt::Message *sample = index >= 0
+                ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
+            if (sample && telemetryBatchActive) {
+                Serial.printf("[dpt-smoke] WOULD_SEND_NOT_DELIVERED | "
+                              "seq=%lu | kind=%u | length=%u | json=%s\n",
+                              static_cast<unsigned long>(sample->sequence),
+                              static_cast<unsigned>(sample->kind),
+                              static_cast<unsigned>(sample->length), sample->body);
+                telemetryJournal.remove(sample->sequence);
+            }
+        }
+        if (telemetryJournal.size() == 0) telemetryBatchActive = false;
+        if (telemetryJournal.dropped() != telemetryLastDropped) {
+            telemetryLastDropped = telemetryJournal.dropped();
+            Serial.printf("[dpt-smoke] dropped_total=%lu | local_test_only=1\n",
+                          static_cast<unsigned long>(telemetryLastDropped));
+        }
+        return;
+    }
+    if (!telemetryCompletionQueue) return;
+    Dpt::DeliveryResult completed{};
+    if (xQueueReceive(telemetryCompletionQueue, &completed, 0) == pdTRUE) {
+        telemetrySending = false;
+        telemetryStallLogged = false;
+        const char *outcome = "RETRY";
+        switch (completed.kind) {
+            case Dpt::Delivery::ACCEPTED: outcome = "ACCEPTED"; break;
+            case Dpt::Delivery::DUPLICATE: outcome = "DUPLICATE"; break;
+            case Dpt::Delivery::HISTORY_ONLY: outcome = "HISTORY_ONLY"; break;
+            case Dpt::Delivery::REJECT: outcome = "REJECTED"; break;
+            case Dpt::Delivery::SECURITY: outcome = "SECURITY_PAUSE"; break;
+            case Dpt::Delivery::RETRY: break;
+        }
+        Serial.printf("[dpt-send] seq=%lu | outcome=%s | http=%d | "
+                      "queue=%u | detection=SERVER_ONLY\n",
+                      static_cast<unsigned long>(completed.sequence), outcome,
+                      completed.httpStatus,
+                      static_cast<unsigned>(telemetryJournal.size()));
+        const Dpt::Message *front = telemetryJournal.at(0);
+        const bool bootRecord = front && front->kind == 3 &&
+                                front->sequence == completed.sequence;
+        // A BOOT older than Core's activation-age window is historical.
+        // Once the authenticated Collector is reachable again, restart the
+        // instrument to generate a fresh random BOOT; never send an
+        // unregistered stream that could be mistaken for live telemetry.
+        if (bootRecord && completed.kind == Dpt::Delivery::HISTORY_ONLY) {
+            Serial.println("[dpt-send] BOOT_HISTORY_ONLY | new_boot_required=1 | rebooting");
+            Serial.flush();
+            ESP.restart();
+            return;
+        }
+        if (completed.kind == Dpt::Delivery::ACCEPTED ||
+            completed.kind == Dpt::Delivery::DUPLICATE ||
+            completed.kind == Dpt::Delivery::HISTORY_ONLY) {
+            telemetryJournal.remove(completed.sequence);
+            telemetryRetries = 0;
+            telemetryRetryDueMs = 0;
+        } else if (completed.kind == Dpt::Delivery::REJECT) {
+            if (bootRecord) {
+                // Invalid BOOT cannot be repaired by sending later probes.
+                telemetrySenderDisabled = true;
+                Serial.println("[dpt-send] BOOT_REJECTED | sender_paused=1");
+            } else {
+                telemetryJournal.discard(completed.sequence);
+                telemetryRetries = 0;
+                telemetryRetryDueMs = 0;
+            }
+        } else if (completed.kind == Dpt::Delivery::SECURITY) {
+            telemetrySenderDisabled = true;
+        } else {
+            // BOOT is mandatory for registration of every event in this boot.
+            // Exhausting the normal per-event budget MUST NOT discard it:
+            // otherwise the Collector can never promote this boot to live.
+            const bool bootPending = bootRecord;
+            if (telemetryRetries < 6) ++telemetryRetries;
+            if (telemetryRetries >= 6 && !bootPending) {
+                telemetryJournal.discard(completed.sequence);
+                telemetryRetries = 0;
+                telemetryRetryDueMs = 0;
+                Serial.println("[dpt-send] retry_budget_exhausted | gap=1");
+            } else {
+                const uint32_t seconds = telemetryRetries >= 6
+                    ? 160UL : (5UL << (telemetryRetries - 1));
+                const uint32_t delayMs = (seconds > 160UL ? 160UL : seconds)
+                    * 1000UL + (esp_random() % 1500UL);
+                telemetryRetryDueMs = millis() +
+                    (completed.retryAfterMs > delayMs ? completed.retryAfterMs : delayMs);
+                if (bootPending && telemetryRetries >= 6)
+                    Serial.println("[dpt-send] BOOT_RETRY_BACKOFF | retained=1");
+            }
+            telemetryBatchActive = false;
+        }
+    }
+    if (telemetryJournal.size() == 0) telemetryBatchActive = false;
+    if (telemetryJournal.dropped() != telemetryLastDropped) {
+        telemetryLastDropped = telemetryJournal.dropped();
+        Serial.printf("[dpt-queue] dropped_total=%lu | "
+                      "historical_gap=1 | flash_storage=NO\n",
+                      static_cast<unsigned long>(telemetryLastDropped));
+    }
+    if (telemetrySending) {
+        if (!telemetryStallLogged &&
+            now - telemetryStartedSendMs > 30000UL) {
+            telemetryStallLogged = true;
+            Serial.println("[dpt-send] SENDER_STALLED | no_worker_kill=1");
+        }
+        return;
+    }
+    if (telemetrySenderDisabled || !wifiUp || probeBusy ||
+        time(nullptr) < 1700000000 || telemetryJournal.size() == 0) return;
+    if (telemetryRetryDueMs &&
+        static_cast<int32_t>(now - telemetryRetryDueMs) < 0) return;
+    if (now - telemetryLastBatchMs >= Dpt::kNormalFlushMs) {
+        telemetryLastBatchMs = now;
+        telemetryBatchActive = true;
+    }
+    // An urgent fault may be behind older regular events. Begin draining
+    // immediately, but do not skip the earlier sequence(s). The Core only
+    // promotes strictly ordered fresh samples into device_latest_state.
+    if (telemetryJournal.hasUrgent()) telemetryBatchActive = true;
+    const int index = telemetryJournal.choose();
+    const Dpt::Message *message = index >= 0
+        ? telemetryJournal.at(static_cast<uint8_t>(index)) : nullptr;
+    if (!message || !telemetryBatchActive) return;
+
+    // Copies the record before launching a worker; the journal can then
+    // receive new samples without racing the sender's immutable body.
+    telemetryInFlight = *message;
+    telemetrySendAt = telemetryUptime.now();
+    if (telemetrySendAt < telemetryInFlight.completedUptime) return;
+    telemetryStartedSendMs = now;
+    const BaseType_t created = xTaskCreatePinnedToCore(
+        telemetryWorker, "dpt-send", 12288, nullptr, 1, nullptr, 1);
+    if (created == pdPASS) telemetrySending = true;
+    else Serial.println("[dpt-send] TASK_ALLOC_FAILED | retry_later=1");
+}
+#endif
 
 void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -88,6 +350,11 @@ void probeWorker(void *) {
 }
 
 void consumeEvent(const ProbeEvent &event) {
+#ifndef DENAPROBE_HOST_TEST
+    if (event.kind == ProbeEventKind::SSH_RESULT)
+        telemetryOnSsh(event);
+    else telemetryOnHttps(event);
+#endif
     if (event.kind == ProbeEventKind::SSH_RESULT) {
         // SSH completed: the remaining worker work is a separate HTTPS phase.
         // DNS/TCP/TLS budgets from two serial phases must not accumulate into
@@ -181,6 +448,9 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);
     connectWiFi();
+#ifndef DENAPROBE_HOST_TEST
+    telemetryBoot();
+#endif
     // Clock diagnostics initialize SNTP later, after WL_CONNECTED + IPv4.
 }
 
@@ -191,6 +461,9 @@ void loop() {
         return;
     }
     const uint32_t now = millis();
+#ifndef DENAPROBE_HOST_TEST
+    telemetryUptime.update(now);
+#endif
     const bool wifiConnected = WiFi.status() == WL_CONNECTED;
     if (!wifiStatusInitialized || wifiConnected != previousWifiConnected) {
         if (wifiStatusInitialized && previousWifiConnected && !wifiConnected)
@@ -199,14 +472,38 @@ void loop() {
                       "signal=HOTSPOT_WIFI_NOT_LTE\n",
                       static_cast<unsigned long>(now),
                       wifiConnected ? "UP" : "DOWN");
+#ifndef DENAPROBE_HOST_TEST
+        if (wifiStatusInitialized && telemetryReady)
+            telemetryJournal.pushLocal(96, telemetryUptime.now(),
+                                       wifiConnected);
+#endif
         previousWifiConnected = wifiConnected;
         wifiStatusInitialized = true;
     }
 
     ProbeEvent event{};
-    if (eventQueue.receive(event)) consumeEvent(event);
+    if (eventQueue.receive(event)) {
+#ifndef DENAPROBE_HOST_TEST
+        // The worker may finish just after the timestamp captured at the
+        // start of this loop. Extend uptime AFTER receiving its event.
+        telemetryUptime.update(millis());
+#endif
+        consumeEvent(event);
+    }
+#ifndef DENAPROBE_HOST_TEST
+    telemetryUpdate(millis(), workerRunning ||
+                    scheduler.sshDueWithin(millis(), 18000UL),
+                    WiFi.status() == WL_CONNECTED);
+#endif
 
-    if (PROBE_HTTPS_QUALITY_ENABLED) {
+    // Signed HTTPS telemetry needs a validated TLS clock even when the
+    // optional public HTTPS quality probe is disabled by the operator.
+    const bool clockRequired = PROBE_HTTPS_QUALITY_ENABLED
+#ifndef DENAPROBE_HOST_TEST
+        || (telemetryReady && !PROBE_DPT_OFFLINE_SMOKE_TEST)
+#endif
+        ;
+    if (clockRequired) {
         const bool up = WiFi.status() == WL_CONNECTED;
         // DHCP must have assigned a usable IPv4 before SNTP setup.
         const bool ipv4Ready = up && WiFi.localIP()[0] != 0;
@@ -220,11 +517,19 @@ void loop() {
             WiFi.disconnect();
             connectWiFi();
         }
-    } else if (!workerRunning && !probeState.stalled && scheduler.sshDue(now)) {
+    } else if (!workerRunning && !probeState.stalled
+#ifndef DENAPROBE_HOST_TEST
+               && !telemetrySending
+#endif
+               && scheduler.sshDue(now)) {
         scheduler.markSshStarted(now);
         if (ESP.getFreeHeap() < DenaProbe::kRequiredHeapBeforeTask) {
             Serial.println("[ssh-deep] NOT_TESTED | reason=LOW_FREE_HEAP");
             probeState.localProbeError = true;
+#ifndef DENAPROBE_HOST_TEST
+            if (telemetryReady) telemetryJournal.pushLocal(
+                90, telemetryUptime.now(), true);
+#endif
         } else {
             workerRunHttps = scheduler.claimHttpsIfDue(
                 now, PROBE_HTTPS_QUALITY_ENABLED);
@@ -239,6 +544,10 @@ void loop() {
                 Serial.println("[ssh-deep] NOT_TESTED | reason=TASK_ALLOC_FAILED");
                 if (workerRunHttps) scheduler.retryHttpsNextProbe();
                 probeState.localProbeError = true;
+#ifndef DENAPROBE_HOST_TEST
+                if (telemetryReady) telemetryJournal.pushLocal(
+                    95, telemetryUptime.now(), true);
+#endif
             }
         }
     }
@@ -246,6 +555,10 @@ void loop() {
     if (workerRunning && !probeState.stalled &&
         millis() - workerStartMs >= DenaProbe::kTaskStalledMs) {
         probeState.stalled = true;
+#ifndef DENAPROBE_HOST_TEST
+        if (telemetryReady) telemetryJournal.pushLocal(
+            92, telemetryUptime.now(), WiFi.status() == WL_CONNECTED);
+#endif
         Serial.println("[ssh-deep] UNKNOWN | reason=WORKER_STALLED | "
                        "further_probes=DISABLED");
     }
