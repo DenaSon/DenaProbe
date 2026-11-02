@@ -291,6 +291,11 @@ Result runSshTransport() {
     } else {
         result.code = Code::SERVICE_REQUEST_ERROR;
     }
+    // The pre-auth SSH step can have succeeded *before* hotspot Wi-Fi fell
+    // during the deep witness; preserve that observation, but report w=0
+    // and z.s=90 instead of inventing a remote network outage.
+    if (result.deep.measured && WiFi.status() != WL_CONNECTED)
+        result.wifiRssiDbm = 0;
     return result;
 }
 
