@@ -1,0 +1,42 @@
+name: R3 DPT2 deep SSH compile and contracts
+
+on:
+  push:
+    branches:
+      - "feature/r3-phase2-*"
+      - master
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "platformio.ini"
+      - ".github/workflows/r3-phase2.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "platformio.ini"
+      - ".github/workflows/r3-phase2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Host regressions including versioned DPT/2
+        run: python tests/run_host_tests.py
+      - name: PlatformIO setup
+        run: pip install platformio
+      - name: Compile default known-good firmware
+        run: pio run -e esp32dev
+      - name: Compile R3 disabled-by-default telemetry and SSH
+        run: pio run -e esp32dev_ssh_feasibility
+      - name: Compile R3 opt-in authenticated channel code
+        run: pio run -e esp32dev_r3_deep_compile
