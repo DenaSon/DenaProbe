@@ -20,6 +20,9 @@ inline uint32_t dropAt = UINT32_MAX;
 inline int dnsCalls = 0, dropOnDns = 0;
 inline bool edgeDns = true, controlDns = true;
 inline bool tlsConnect = true, badPin = false;
+inline bool tcpOk = true;
+inline uint32_t tcpDelayMs = 25;
+inline int tcpAttempts = 0;
 inline int connects = 0, stops = 0, serviceCalls = 0;
 inline std::string tlsHostname, tlsRoot;
 inline uint32_t heap = 200000;
@@ -43,6 +46,7 @@ inline void reset() {
     ledLevel = -1; dropAt = UINT32_MAX;
     dnsCalls = dropOnDns = connects = stops = serviceCalls = 0;
     edgeDns = controlDns = tlsConnect = true; badPin = false;
+    tcpOk = true; tcpDelayMs = 25; tcpAttempts = 0;
     tlsHostname.clear(); tlsRoot.clear(); heap = 200000; largest = 100000;
     transportRc = serviceRc = 0; response = Response::NORMAL;
     httpCode = 200; contentLength = payloadSize = 65536; bodyDelay = 20;
