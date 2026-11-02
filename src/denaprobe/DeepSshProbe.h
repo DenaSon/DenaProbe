@@ -65,11 +65,13 @@ inline TransferEvidence deepTransfer(ssh_session session) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     if (rc != SSH_OK) {
-        out.code = rc == SSH_AGAIN ? 20 : 23;
+        out.code = WiFi.status() != WL_CONNECTED ? 90 :
+            (rc == SSH_AGAIN ? 20 : 23);
         out.elapsedMs = millis() - start;
         ssh_channel_free(channel);
         return out;
     }
+    out.channelOpened = true;
     out.code = 20;  // timeout until complete
     const uint32_t bodyStart = millis();
     uint8_t chunk[512]{};
@@ -148,22 +150,29 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
             if (!ssh_is_connected(session)) {
                 out.code = 20;  // session closed/reset unexpectedly
             } else if (!out.second.attempted) {
-                out.code = 21;  // session timed out before second sample
+                out.code = 21;  // no valid second sample
+            } else if (!out.second.channelOpened) {
+                out.code = out.second.code == 20 ? 31 : 30;
             } else if (out.second.code == 1) {
                 out.code = 1;   // both full, deterministic bodies verified
             } else if (out.second.code == 20) {
-                out.code = 40;  // data timeout
+                out.code = 40;  // data timeout after channel open
             } else {
-                out.code = 41;  // incomplete/channel failure
+                out.code = 41;  // incomplete after channel open
             }
         } else if (!ssh_is_connected(session)) {
             out.code = 20;
+        } else if (!out.first.channelOpened) {
+            out.code = out.first.code == 20 ? 31 : 30;
         } else if (out.first.code == 20) {
             out.code = 40;
         } else {
             out.code = 41;
         }
     }
+    // A local hotspot loss during the authenticated dwell or transfer is
+    // *never* evidence of SSH reset, channel failure or remote throttling.
+    if (WiFi.status() != WL_CONNECTED) out.code = 90;
     out.sessionMs = millis() - started;
     out.completedAtMs = millis();
 }
