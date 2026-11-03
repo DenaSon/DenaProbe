@@ -77,16 +77,22 @@ CurrentState currentState(uint32_t now, bool wifiConnected) const {
         }
     }
 
-    // When deep auth/forwarding is explicitly enabled, a pre-auth PASS
-    // cannot light a solid "ready" LED while deep evidence is absent,
-    // stale, locally unmeasurable, or actively failing.
-    const bool deepMissing = PROBE_DEEP_ENABLED &&
-        (!deepLastMeasured || now - deepLastResultAtMs > 3U * kProbeIntervalMs);
-    const bool deepLocal = PROBE_DEEP_ENABLED && deepLastMeasured &&
+    // Deep is a future experiment. The production monitoring-only build
+    // carries no runtime dependency on Deep evidence or credentials.
+#if PROBE_DEEP_ENABLED
+    // Preserve the experimental LED safety behavior when explicitly built.
+    const bool deepMissing =
+        !deepLastMeasured || now - deepLastResultAtMs > 3U * kProbeIntervalMs;
+    const bool deepLocal = deepLastMeasured &&
         (lastDeepCode == 90 || lastDeepCode == 10 ||
          lastDeepCode == 11 || lastDeepCode == 12);
-    const bool deepFailure = PROBE_DEEP_ENABLED && deepLastMeasured &&
+    const bool deepFailure = deepLastMeasured &&
         lastDeepCode != 1 && !deepLocal && !deepMissing;
+#else
+    constexpr bool deepMissing = false;
+    constexpr bool deepLocal = false;
+    constexpr bool deepFailure = false;
+#endif
     if (!wifiConnected) {
         state.led = LedMode::WIFI_DOWN;
     } else if (state.ssh == SshPathState::FAILURE || deepFailure) {
