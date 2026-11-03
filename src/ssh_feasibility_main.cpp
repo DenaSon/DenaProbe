@@ -129,9 +129,10 @@ void telemetryBoot() {
         telemetryUptime.now(), WiFi.status() == WL_CONNECTED,
         PROBE_DPT_PROTOCOL_VERSION);
     telemetryLastBatchMs = millis();
-    Serial.printf("[dpt] %s | version=1 | mode=%s | queue_capacity=%u | "
+    Serial.printf("[dpt] %s | version=%u | mode=%s | queue_capacity=%u | "
                   "period_ms=%lu | one_event_per_post=1 | detection=SERVER_ONLY\n",
                   telemetryReady ? "READY" : "DISABLED",
+                  static_cast<unsigned>(PROBE_DPT_PROTOCOL_VERSION),
                   PROBE_DPT_OFFLINE_SMOKE_TEST ? "OFFLINE_SMOKE_NO_NETWORK" : "HTTPS_SENDER",
                   static_cast<unsigned>(Dpt::kQueueCapacity),
                   static_cast<unsigned long>(Dpt::kNormalFlushMs));
@@ -415,7 +416,7 @@ void setup() {
     delay(1500);
     statusLed.begin();
     statusLed.update();
-    Serial.println("=== DenaProbe | R1 separated SSH/HTTPS events (experimental) ===");
+    Serial.println("=== DenaProbe | independent TCP/SSH/HTTPS observer ===");
     Serial.println("[led-map] solid=SSH_PASS_UNLESS_HTTPS_SLOW_OR_FAILED | "
                    "long_on_short_off=HTTPS_SLOW | triple_flash=HTTPS_ENDPOINT_FAILURE | "
                    "double_flash=SSH_FAILURE | half_second_pulse=UNMEASURED | "
