@@ -457,6 +457,38 @@ int main() {
         // preflight observation into success or a VPN verdict.
         assert(observed.code == Code::PASS);
     });
+    check("R3 monitoring-only emits DPT2 TCP without Deep authentication", [] {
+        Dpt::Journal journal;
+        const char *boot = "6a3c9f106a3c9f106a3c9f106a3c9f10";
+        assert(journal.begin("dp-lte-01", boot, 1, 100, true, 2));
+        Result result{};
+        result.code = Code::PASS;
+        result.tcp.measured = true;
+        result.tcp.code = 1;
+        result.tcp.elapsedMs = 42;
+        // Optional authenticated Deep evidence has not been provisioned.
+        assert(!result.deep.measured);
+        assert(journal.pushSsh(result, 1200, true, nullptr, 0, 1100, 0));
+        const Dpt::Message *message = journal.at(1);
+        assert(message != nullptr);
+        assert(strstr(message->body, "\"v\":2") != nullptr);
+        assert(strstr(message->body, "\"c\":{") != nullptr);
+        assert(strstr(message->body, "\"z\":{") == nullptr);
+        assert(journal.choose() == 0); // BOOT must remain first.
+    });
+    check("R3 monitoring-only LED ignores dormant Deep state", [] {
+        static_assert(PROBE_DEEP_ENABLED == 0,
+                      "Host baseline must not activate experimental Deep SSH");
+        ProbeState state;
+        state.validConfig = true;
+        state.sshLastMeasured = true;
+        state.lastSshCode = Code::PASS;
+        state.lastSshResultAtMs = 100;
+        state.deepLastMeasured = true; // Simulate leftover future-only data.
+        state.lastDeepCode = 20;
+        state.deepLastResultAtMs = 100;
+        assert(state.currentState(100, true).led == LedMode::SSH_READY);
+    });
     check("DPT/2 journal encodes independent TCP and deep transfer samples", [] {
         Dpt::Journal j;
         const char *boot = "57fce203c6e94baf8d32749c11f0a65d";

@@ -11,7 +11,10 @@
 #include <libssh/ssh2.h>
 #include "ProbeConfig.h"
 #include "ProbeTypes.h"
+// Keep experimental authenticated SSH out of the normal monitoring build.
+#if PROBE_DEEP_ENABLED
 #include "DeepSshProbe.h"
+#endif
 
 // No authentication, SSH channel or NPV data-path operation in R1.
 // libssh progress callbacks are observational and MUST NOT consume packets.
@@ -190,11 +193,13 @@ Result runSshTransport() {
         return result;
     }
 
+#if PROBE_DEEP_ENABLED
     if (deepSettingsValid() &&
         ssh_options_set(owner.session, SSH_OPTIONS_USER, PROBE_DEEP_USER) != SSH_OK) {
         result.code = Code::SSH_OPTIONS_FAILED;
         return result;
     }
+#endif
     ssh_set_blocking(owner.session, 0);
     if (!owner.installObservers()) {
         result.code = Code::SSH_OPTIONS_FAILED;
@@ -273,19 +278,20 @@ Result runSshTransport() {
         result.code = Code::WIFI_LOST;
     } else if (rc == SSH_OK) {
         result.code = Code::PASS;
-        if (PROBE_DEEP_ENABLED) {
-            if (!deepSettingsValid()) {
-                result.deep.measured = true;
-                result.deep.code = 90;
-                result.deep.completedAtMs = millis();
-            } else {
-                // Deep probes are downsampled to bound hotspot LTE usage.
-                static uint32_t acceptedCycles = 0;
-                ++acceptedCycles;
-                if (acceptedCycles % PROBE_DEEP_EVERY_N_CYCLES == 0)
-                    runAuthenticatedDeep(owner.session, result.deep);
-            }
+#if PROBE_DEEP_ENABLED
+        // Future optional experiment: normal DPT/2 monitoring does not
+        // require an SSH identity, private key, or relay-local responder.
+        if (!deepSettingsValid()) {
+            result.deep.measured = true;
+            result.deep.code = 90;
+            result.deep.completedAtMs = millis();
+        } else {
+            static uint32_t acceptedCycles = 0;
+            ++acceptedCycles;
+            if (acceptedCycles % PROBE_DEEP_EVERY_N_CYCLES == 0)
+                runAuthenticatedDeep(owner.session, result.deep);
         }
+#endif
     } else if (rc == SSH_AGAIN) {
         result.code = Code::SERVICE_ACCEPT_TIMEOUT;
     } else {
