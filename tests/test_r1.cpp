@@ -46,6 +46,10 @@ void resetOrchestration() {
 }
 
 int main() {
+    check("DPT/2 pilot flushes FIFO before 90s Core SSH freshness limit", [] {
+        assert(Dpt::kNormalFlushMs == 30000UL);
+        assert(Dpt::kNormalFlushMs < 90000UL);
+    });
     check("HTTPS silent fixed-length body exits at deadline", [] {
         bodyTimeout(Fake::Response::SILENT_BODY, 65536);
     });
