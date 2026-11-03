@@ -11,7 +11,7 @@
 namespace DenaProbe { namespace Dpt {
 constexpr size_t kMaxBody = 1024;
 constexpr uint8_t kQueueCapacity = 12;
-constexpr uint32_t kNormalFlushMs = 90000UL;
+constexpr uint32_t kNormalFlushMs = 30000UL;
 constexpr uint32_t kMaxReplayAgeMs = 360000UL; // Older messages remain history, never live hints.
 
 struct Message {
