@@ -471,9 +471,9 @@ int main() {
         assert(journal.pushSsh(result, 1200, true, nullptr, 0, 1100, 0));
         const Dpt::Message *message = journal.at(1);
         assert(message != nullptr);
-        assert(strstr(message->body, "\\"v\\":2") != nullptr);
-        assert(strstr(message->body, "\\"c\\":{") != nullptr);
-        assert(strstr(message->body, "\\"z\\":{") == nullptr);
+        assert(strstr(message->body, "\"v\":2") != nullptr);
+        assert(strstr(message->body, "\"c\":{") != nullptr);
+        assert(strstr(message->body, "\"z\":{") == nullptr);
         assert(journal.choose() == 0); // BOOT must remain first.
     });
     check("R3 monitoring-only LED ignores dormant Deep state", [] {
