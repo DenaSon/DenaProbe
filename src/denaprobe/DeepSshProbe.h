@@ -50,7 +50,7 @@
 
 namespace DenaProbe {
 #if PROBE_DEEP_ENABLED
-inline bool deepSettingsValid() {
+inline bool authSettingsValid() {
     const size_t userLen = strlen(PROBE_DEEP_USER);
 #if PROBE_DEEP_AUTH_MODE == 1
     const size_t secretLen = strlen(PROBE_DEEP_PASSWORD);
@@ -62,11 +62,15 @@ inline bool deepSettingsValid() {
 #endif
     return PROBE_DEEP_ENABLED && userLen >= 1 && userLen <= 48 &&
            credentialsValid &&
+           PROBE_DEEP_EVERY_N_CYCLES >= 1 && PROBE_DEEP_EVERY_N_CYCLES <= 30;
+}
+
+inline bool deepSettingsValid() {
+    return authSettingsValid() &&
            strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") == 0 &&
            PROBE_DEEP_REMOTE_PORT >= 1 && PROBE_DEEP_REMOTE_PORT <= 65535 &&
            PROBE_DEEP_SAMPLE_BYTES >= 1 && PROBE_DEEP_SAMPLE_BYTES <= 65536UL &&
-           PROBE_DEEP_DWELL_MS <= 30000UL &&
-           PROBE_DEEP_EVERY_N_CYCLES >= 1 && PROBE_DEEP_EVERY_N_CYCLES <= 30;
+           PROBE_DEEP_DWELL_MS <= 30000UL;
 }
 
 // A controlled relay-local TCP responder sends exactly N bytes of the byte 0x5A
@@ -178,6 +182,20 @@ inline const char *deepAuthOutcome(uint16_t code) {
         case 12: return "AUTH_ERROR";
         default: return "LOCAL_UNMEASURABLE";
     }
+}
+
+// B3: authenticate on the pinned SSH session; no channel is allocated.
+inline void runEdgeAuthOnly(ssh_session session, AuthEvidence &out) {
+    out.measured = true;
+    const DeepAuthAttempt attempt = performDeepAuth(session);
+    out.code = attempt.code;
+    out.elapsedMs = attempt.elapsedMs;
+    out.completedAtMs = millis();
+    Serial.printf("[edge-auth] mode=PASSWORD | outcome=%s | ms=%lu | "
+                  "host_key=PIN_VERIFIED | forwarding=NOT_TESTED | "
+                  "filtering_verdict=INCONCLUSIVE\n",
+                  deepAuthOutcome(out.code),
+                  static_cast<unsigned long>(out.elapsedMs));
 }
 
 inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
