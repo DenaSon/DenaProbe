@@ -156,6 +156,13 @@ Result runSshTransport() {
         return result;
     }
 
+    // Reuse exactly the resolver result for TCP and SSH; never perform an
+    // extra lookup or substitute the Core host's IP.
+    const String resolvedIp = address.toString();
+    if (!resolvedIp.empty() && resolvedIp.length() < sizeof(result.resolvedEdgeIp)) {
+        strcpy(result.resolvedEdgeIp, resolvedIp.c_str());
+    }
+
     // Independent, bounded TCP connect; unlike ssh_connect() this verifies
     // reachability before any KEX or authentication can start.
     result.tcp.measured = true;
@@ -177,7 +184,6 @@ Result runSshTransport() {
 
     // A new connection is used for the feasibility spike, not the v0.0.4
     // banner socket. Hostname is resolved every run; no Core IP is configured.
-    const String resolvedIp = address.toString();
     SessionOwner owner;
     owner.session = ssh_new();
     if (!owner.session) {
