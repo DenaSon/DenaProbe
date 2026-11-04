@@ -204,7 +204,14 @@ Result runSshTransport() {
 #endif
 
 #if PROBE_DEEP_ENABLED
-    if (deepSettingsValid() &&
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    // Login must remain measurable even if the separate data destination is
+    // not configured. Set the SSH username before connecting, either way.
+    const bool userConfigured = authSettingsValid();
+#else
+    const bool userConfigured = deepSettingsValid();
+#endif
+    if (userConfigured &&
         ssh_options_set(owner.session, SSH_OPTIONS_USER, PROBE_DEEP_USER) != SSH_OK) {
         result.code = Code::SSH_OPTIONS_FAILED;
         return result;
