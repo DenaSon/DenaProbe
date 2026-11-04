@@ -30,6 +30,23 @@
 #endif
 #endif
 
+// B3 is the authenticated public Edge path, not a Core-loopback pilot.
+#if defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY
+#if PROBE_DEEP_ENABLED != 1 || PROBE_DEEP_AUTH_MODE != 1 || PROBE_DEEP_AUTH_ONLY != 1
+#error "B3 requires Deep=1, Password=1, AUTH_ONLY=1 in local private config"
+#endif
+#if !defined(PROBE_A2_PIN_ED25519) || PROBE_A2_PIN_ED25519 != 1
+#error "B3 requires pinned ED25519 host-key algorithm"
+#endif
+#if (defined(PROBE_B1_FORWARDING_PILOT) && PROBE_B1_FORWARDING_PILOT) || \
+    (defined(PROBE_B2_LOOPBACK_TELEMETRY) && PROBE_B2_LOOPBACK_TELEMETRY)
+#error "B3 Edge auth cannot be combined with forwarding pilots"
+#endif
+#if defined(PROBE_B3_BOARD_STAGE1) && PROBE_B3_BOARD_STAGE1 && \
+    defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
+#error "B3 stage1 must NOT transmit auth fields to old Core"
+#endif
+#endif
 #include "denaprobe/ProbeConfig.h"
 #include "denaprobe/ProbeTypes.h"
 #include "denaprobe/SshProbe.h"
@@ -91,6 +108,7 @@ Result telemetryPendingSsh{};
 uint64_t telemetryPendingSshAt = 0;
 uint64_t telemetryPendingTcpAt = 0;
 uint64_t telemetryPendingDeepAt = 0;
+uint64_t telemetryPendingAuthAt = 0;
 bool telemetryPendingWifi = false;
 
 QueueHandle_t telemetryCompletionQueue = nullptr;
@@ -170,6 +188,8 @@ void telemetryOnSsh(const ProbeEvent &event) {
         ? telemetryUptime.at(event.ssh.tcp.completedAtMs) : 0;
     telemetryPendingDeepAt = telemetryPendingSsh.deep.measured
         ? telemetryUptime.at(telemetryPendingSsh.deep.completedAtMs) : 0;
+    telemetryPendingAuthAt = telemetryPendingSsh.auth.measured
+        ? telemetryUptime.at(telemetryPendingSsh.auth.completedAtMs) : 0;
     // Capture the link as observed by the SSH probe, not a potentially
     // changed Wi-Fi state at main-loop consumption time.
     telemetryPendingWifi = event.ssh.code != Code::WIFI_LOST &&
@@ -178,7 +198,8 @@ void telemetryOnSsh(const ProbeEvent &event) {
         telemetryJournal.pushSsh(telemetryPendingSsh,
                                  telemetryPendingSshAt, telemetryPendingWifi,
                                  nullptr, 0, telemetryPendingTcpAt,
-                                 telemetryPendingDeepAt);
+                                 telemetryPendingDeepAt,
+                                 telemetryPendingAuthAt);
     }
 }
 void telemetryOnHttps(const ProbeEvent &event) {
@@ -188,7 +209,8 @@ void telemetryOnHttps(const ProbeEvent &event) {
     telemetryJournal.pushSsh(telemetryPendingSsh, telemetryPendingSshAt,
                              telemetryPendingWifi, &event.https,
                              telemetryUptime.at(event.completedAtMs),
-                             telemetryPendingTcpAt, telemetryPendingDeepAt);
+                             telemetryPendingTcpAt, telemetryPendingDeepAt,
+                             telemetryPendingAuthAt);
     telemetryPendingHttps = false;
 }
 
