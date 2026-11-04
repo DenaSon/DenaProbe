@@ -184,7 +184,7 @@ void printResult(const Result &result) {
         "[ssh-deep] END | result=%s | dns_ms=%lu | transport_ms=%lu | "
         "service_ms=%lu | free_heap=%lu | min_heap=%lu | "
         "largest_block=%lu | stack_watermark_raw=%lu | "
-        "auth=NOT_TESTED | npv=NOT_TESTED | filtering_verdict=INCONCLUSIVE\n",
+        "auth=%s | npv=NOT_TESTED | filtering_verdict=INCONCLUSIVE\n",
         codeName(result.code),
         static_cast<unsigned long>(result.dnsMs),
         static_cast<unsigned long>(result.transportMs),
@@ -192,7 +192,12 @@ void printResult(const Result &result) {
         static_cast<unsigned long>(result.freeHeap),
         static_cast<unsigned long>(result.minimumHeap),
         static_cast<unsigned long>(result.largestBlock),
-        static_cast<unsigned long>(result.stackWatermark));
+        static_cast<unsigned long>(result.stackWatermark),
+        !result.deep.measured ? "NOT_TESTED" :
+        result.deep.authCode == 1 ? "SUCCESS" :
+        result.deep.authCode == 10 ? "REJECTED" :
+        result.deep.authCode == 11 ? "TIMEOUT" :
+        result.deep.authCode == 12 ? "ERROR" : "LOCAL_UNMEASURABLE");
 }
 
 } // namespace DenaProbe

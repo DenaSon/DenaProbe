@@ -12,11 +12,16 @@
 #define PROBE_LED_ACTIVE_LOW 0
 
 // R3 Phase 2: opt-in only. The default remains OFF, including for all users.
-// Use a dedicated monitoring-only SSH key and restricted forwarding account.
-// Do NOT paste customer passwords or private keys into Git or an issue.
+// Mode 0 = existing public-key Deep experiment; mode 1 = A1 password Deep.
+// Keep Deep OFF unless explicitly conducting an authorized A2 pilot.
+// Place REAL credentials only in the ignored local probe_private.h file.
+// Passwords embedded in ESP32 flash are extractable with physical access.
+// Do not put customer credentials or secrets in the repo, Serial or PR.
 #define PROBE_DEEP_ENABLED 0
+#define PROBE_DEEP_AUTH_MODE 1 // 1=password; 0=legacy public-key
 #define PROBE_DEEP_USER ""
-#define PROBE_DEEP_PRIVATE_KEY_B64 "" // LOCAL ignored file ONLY
+#define PROBE_DEEP_PASSWORD "" // LOCAL ignored file ONLY
+#define PROBE_DEEP_PRIVATE_KEY_B64 "" // only for mode 0
 #define PROBE_DEEP_REMOTE_HOST "127.0.0.1"
 #define PROBE_DEEP_REMOTE_PORT 18180
 #define PROBE_DEEP_SAMPLE_BYTES 16384UL

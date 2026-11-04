@@ -28,6 +28,13 @@ inline std::string tlsHostname, tlsRoot;
 inline uint32_t heap = 200000;
 inline uint32_t largest = 100000;
 inline int transportRc = 0, serviceRc = 0;
+// Synthetic A1 libssh controls; no live credentials.
+inline int authRc = 0, authAgain = 0, authCalls = 0, connectCalls = 0;
+inline bool userBeforeConnect = false;
+inline int channelOpenRc = 0, channelAgain = 0, channelOpens = 0;
+inline bool channelAlloc = true, secondSilent = false, wrongBody = false;
+inline bool shortBody = false, channelReadError = false, sessionConnected = true;
+inline uint32_t sessionDropAt = UINT32_MAX, channelBytes = 0;
 enum class Response { NORMAL, SILENT_BODY, DRIP_BODY, SILENT_HEADERS,
                       DRIP_HEADERS, SILENT_CHUNK_HEADER };
 inline Response response = Response::NORMAL;
@@ -40,6 +47,8 @@ inline void (*worker)(void *) = nullptr;
 inline void tick(uint32_t ms = 1) {
     now += ms;
     if (dropAt != UINT32_MAX && now >= dropAt) wifi = false;
+    if (sessionDropAt != UINT32_MAX && now >= sessionDropAt)
+        sessionConnected = false;
 }
 inline void reset() {
     now = 0; wifi = true; ipReady = true; sntpConfigCalls = 0;
@@ -48,7 +57,14 @@ inline void reset() {
     edgeDns = controlDns = tlsConnect = true; badPin = false;
     tcpOk = true; tcpDelayMs = 25; tcpAttempts = 0;
     tlsHostname.clear(); tlsRoot.clear(); heap = 200000; largest = 100000;
-    transportRc = serviceRc = 0; response = Response::NORMAL;
+    transportRc = serviceRc = 0;
+    authRc = authAgain = authCalls = connectCalls = 0;
+    userBeforeConnect = false;
+    channelOpenRc = channelAgain = channelOpens = 0;
+    channelAlloc = true; secondSilent = wrongBody = shortBody = false;
+    channelReadError = false; sessionConnected = true;
+    sessionDropAt = UINT32_MAX; channelBytes = 0;
+    response = Response::NORMAL;
     httpCode = 200; contentLength = payloadSize = 65536; bodyDelay = 20;
     logs.clear(); taskCreates = taskDeletes = 0; taskAlloc = true; worker = nullptr;
 }
