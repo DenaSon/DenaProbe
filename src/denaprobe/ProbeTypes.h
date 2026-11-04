@@ -47,6 +47,13 @@ struct TransferEvidence {
     uint32_t received = 0;
     uint32_t elapsedMs = 0;
 };
+// B3: independent observation of an Edge SSH login (no forwarding).
+struct AuthEvidence {
+    bool measured = false;
+    uint16_t code = 90; // 1=success, 10=rejected, 11=timeout, 12=error, 90=local
+    uint32_t elapsedMs = 0;
+    uint32_t completedAtMs = 0;
+};
 struct DeepEvidence {
     bool measured = false;
     uint16_t code = 90;        // deep-session status
@@ -64,6 +71,7 @@ struct DeepEvidence {
 struct Result {
     TcpEvidence tcp{};
     DeepEvidence deep{};
+    AuthEvidence auth{}; // Auth measured independently from Core-loopback.
     Code code;
     StageTrace stages;
     uint32_t dnsMs;
