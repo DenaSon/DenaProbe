@@ -51,6 +51,8 @@ Build: `esp32dev_lite_compile`.
 Build: `esp32dev_lite_wire_compile`.
 The new signed DPT/2 payload uses:
   `"j":{"u":auth_uptime,"s":auth_code,"ms":duration_ms}`
+  `"ei":"192.0.2.1"` (example: actual IPv4 returned by the board's Edge DNS;
+   omitted on DNS failure; only sent by the coordinated Lite wire profile)
   `"z":{"u":deep_uptime,"s":deep_code,"am":auth_ms,"sm":session_ms,"rt":2,
         "f":{"s":first_code,"r":8192,"n":received_1,"ms":elapsed_1},
         "g":{"s":second_code,"r":8192,"n":received_2,"ms":elapsed_2}}`
