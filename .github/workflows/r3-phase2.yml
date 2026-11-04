@@ -48,3 +48,7 @@ jobs:
         run: pio run -e esp32dev_b1_forwarding_compile
       - name: Compile B2 tagged Core-loopback telemetry (CI only, no credentials)
         run: pio run -e esp32dev_b2_loopback_telemetry_compile
+      - name: Compile B3 Edge authentication (legacy Core compatible)
+        run: pio run -e esp32dev_b3_edge_auth_compile
+      - name: Compile B3 reserved signed auth field (CI only, Core not upgraded)
+        run: pio run -e esp32dev_b3_edge_auth_wire_compile
