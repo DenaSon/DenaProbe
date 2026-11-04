@@ -159,7 +159,7 @@ Result runSshTransport() {
     // Reuse exactly the resolver result for TCP and SSH; never perform an
     // extra lookup or substitute the Core host's IP.
     const String resolvedIp = address.toString();
-    if (!resolvedIp.empty() && resolvedIp.length() < sizeof(result.resolvedEdgeIp)) {
+    if (resolvedIp.length() > 0 && resolvedIp.length() < sizeof(result.resolvedEdgeIp)) {
         strcpy(result.resolvedEdgeIp, resolvedIp.c_str());
     }
 
