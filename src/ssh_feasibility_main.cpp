@@ -163,12 +163,12 @@ void telemetryBoot() {
 void telemetryOnSsh(const ProbeEvent &event) {
     if (!telemetryReady) return;
     telemetryPendingHttps = !event.workerFinished;
-    telemetryPendingSsh = event.ssh;
+    telemetryPendingSsh = telemetrySafeResult(event.ssh);
     telemetryPendingSshAt = telemetryUptime.at(event.completedAtMs);
     telemetryPendingTcpAt = event.ssh.tcp.measured
         ? telemetryUptime.at(event.ssh.tcp.completedAtMs) : 0;
-    telemetryPendingDeepAt = event.ssh.deep.measured
-        ? telemetryUptime.at(event.ssh.deep.completedAtMs) : 0;
+    telemetryPendingDeepAt = telemetryPendingSsh.deep.measured
+        ? telemetryUptime.at(telemetryPendingSsh.deep.completedAtMs) : 0;
     // Capture the link as observed by the SSH probe, not a potentially
     // changed Wi-Fi state at main-loop consumption time.
     telemetryPendingWifi = event.ssh.code != Code::WIFI_LOST &&

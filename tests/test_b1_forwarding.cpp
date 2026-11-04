@@ -52,6 +52,21 @@ int main() {
         assert(std::strstr(m->body, "\"g\":{\"s\":1,\"r\":16384,\"n\":16384") != nullptr);
         assert(std::strstr(m->body, PROBE_DEEP_PASSWORD) == nullptr);
     });
+    verify("B1 serial-only Deep mask preserves preauth DPT2 without z/f/g", [] {
+        const Result measured = probe();
+        const Result safe = telemetrySafeResult(measured);
+        assert(measured.deep.code == 1 && safe.code == Code::PASS);
+        assert(!safe.deep.measured && safe.tcp.measured);
+        Dpt::Journal journal;
+        assert(journal.begin("dp-test-01", "0123456789abcdef0123456789abcdef",
+                             1, 100, true, 2));
+        assert(journal.pushSsh(safe, 1000, true, nullptr, 0, 900, 990));
+        const auto *m = journal.at(1);
+        assert(m && std::strstr(m->body, "\"c\":") != nullptr);
+        assert(std::strstr(m->body, "\"z\":") == nullptr);
+        assert(std::strstr(m->body, "\"f\":") == nullptr);
+        assert(std::strstr(m->body, "\"g\":") == nullptr);
+    });
     verify("no forwarding if host key mismatch", [] {
         Fake::badPin = true;
         const auto r = runSshTransport();
