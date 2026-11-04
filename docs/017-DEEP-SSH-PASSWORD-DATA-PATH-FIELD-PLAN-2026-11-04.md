@@ -4,6 +4,8 @@
 **Primary repo:** `DenaSon/DenaProbe` (ESP32). **Companion:** `DenaSon/nvl-bot` (Core / Telegram).
 **Decision:** Board-first engineering and real serial validation; Core/Telegram changes only after explicit hardware acceptance.
 
+**A0 feasibility audit status (2026-11-04):** [read evidence, CI sizes and open hardware/server gates](020-A0-BASELINE-LIBSSH-PASSWORD-FEASIBILITY-2026-11-04.md). Source/CI feasibility is established; physical Deep support and effective server Password Authentication are **not yet verified**.
+
 ## 0. Problem and desired outcome
 
 Production DenaProbe has passed an actual controlled test for D0 (TCP failure), rapid native Telegram alert (~30s observed), and recovery notification. A later real-world Edge-IP disruption was **not detected**: independent TCP and SSH pre-auth remained green and no alert was sent. Prior MCI audits show precisely this blind spot: SSH TCP/KEX/service request may work while authenticated SSH session, forwarding channel, or subsequent transfer stalls/resets. That observation is not, by itself, proof of a filtering cause.
