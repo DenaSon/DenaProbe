@@ -106,7 +106,7 @@ int main() {
     Fake::reset();
     Fake::dropAt = 100;
     r = runSshTransport();
-    assert(r.deep.code == 90 && r.auth.code == 90);
+    assert(r.deep.code == 90 && r.auth.code == 1); // Wi-Fi drops after login.
     assert(r.wifiRssiDbm == 0);
 
     std::cout << "PASS Lite MCI Edge login, controlled 8KiB x2 transfer, "
