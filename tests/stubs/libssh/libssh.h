@@ -55,6 +55,7 @@ inline ssh_channel ssh_channel_new(ssh_session) {
 }
 inline int ssh_channel_open_forward(ssh_channel, const char *host, int port, const char *, int) {
     Fake::forwardToApprovedLoopback &= (std::strcmp(host, "127.0.0.1") == 0 && port == 18180);
+    Fake::forwardToLiteTarget &= (std::strcmp(host, "witness.example") == 0 && port == 18180);
     Fake::authBeforeForward &= (Fake::authCalls > 0 && Fake::authRc == SSH_AUTH_SUCCESS);
     ++Fake::channelOpens;
     Fake::tick(5);

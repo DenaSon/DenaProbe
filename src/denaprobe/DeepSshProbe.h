@@ -47,10 +47,19 @@
 #ifndef PROBE_DEEP_EVERY_N_CYCLES
 #define PROBE_DEEP_EVERY_N_CYCLES 2
 #endif
+#ifndef PROBE_LITE_SAMPLE_BYTES
+#define PROBE_LITE_SAMPLE_BYTES 8192UL
+#endif
+#ifndef PROBE_LITE_DWELL_MS
+#define PROBE_LITE_DWELL_MS 5000UL
+#endif
+#ifndef PROBE_LITE_EVERY_N_CYCLES
+#define PROBE_LITE_EVERY_N_CYCLES 1
+#endif
 
 namespace DenaProbe {
 #if PROBE_DEEP_ENABLED
-inline bool deepSettingsValid() {
+inline bool authSettingsValid() {
     const size_t userLen = strlen(PROBE_DEEP_USER);
 #if PROBE_DEEP_AUTH_MODE == 1
     const size_t secretLen = strlen(PROBE_DEEP_PASSWORD);
@@ -62,11 +71,44 @@ inline bool deepSettingsValid() {
 #endif
     return PROBE_DEEP_ENABLED && userLen >= 1 && userLen <= 48 &&
            credentialsValid &&
-           strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") == 0 &&
+           PROBE_DEEP_EVERY_N_CYCLES >= 1 && PROBE_DEEP_EVERY_N_CYCLES <= 30;
+}
+
+inline bool deepSettingsValid() {
+    if (!authSettingsValid()) return false;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    if (PROBE_LITE_SAMPLE_BYTES < 1024UL ||
+        PROBE_LITE_SAMPLE_BYTES > 16384UL ||
+        PROBE_LITE_DWELL_MS > 10000UL ||
+        PROBE_LITE_EVERY_N_CYCLES < 1 ||
+        PROBE_LITE_EVERY_N_CYCLES > 30) return false;
+    // Require a hostname with an alphabetic public DNS suffix; reject literal
+    // loopback/private IPs and the unused placeholder. Public routability
+    // still needs a separate operator-approved Core-side preflight.
+    const char *target = PROBE_DEEP_REMOTE_HOST;
+    const size_t n = strlen(target);
+    if (n < 4 || n > 128 ||
+        strcmp(target, "CHANGE_ME_LITE_HOST") == 0 ||
+        strcmp(target, "localhost") == 0) return false;
+    bool hasLetter = false, hasDot = false;
+    for (size_t i = 0; i < n; ++i) {
+        const char x = target[i];
+        const bool letter = (x >= 'a' && x <= 'z') ||
+                            (x >= 'A' && x <= 'Z');
+        hasLetter |= letter;
+        hasDot |= x == '.';
+        if (!(letter || (x >= '0' && x <= '9') ||
+              x == '-' || x == '.')) return false;
+    }
+    if (!hasLetter || !hasDot ||
+        (n >= 6 && strcmp(target + n - 6, ".local") == 0)) return false;
+#else
+    if (strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") != 0) return false;
+#endif
+    return
            PROBE_DEEP_REMOTE_PORT >= 1 && PROBE_DEEP_REMOTE_PORT <= 65535 &&
            PROBE_DEEP_SAMPLE_BYTES >= 1 && PROBE_DEEP_SAMPLE_BYTES <= 65536UL &&
-           PROBE_DEEP_DWELL_MS <= 30000UL &&
-           PROBE_DEEP_EVERY_N_CYCLES >= 1 && PROBE_DEEP_EVERY_N_CYCLES <= 30;
+           PROBE_DEEP_DWELL_MS <= 30000UL;
 }
 
 // A controlled relay-local TCP responder sends exactly N bytes of the byte 0x5A
@@ -74,7 +116,11 @@ inline bool deepSettingsValid() {
 inline TransferEvidence deepTransfer(ssh_session session) {
     TransferEvidence out{};
     out.attempted = true;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    out.requested = PROBE_LITE_SAMPLE_BYTES;
+#else
     out.requested = PROBE_DEEP_SAMPLE_BYTES;
+#endif
     out.code = 23; // channel error until opened
     const uint32_t start = millis();
     ssh_channel channel = ssh_channel_new(session);
@@ -180,6 +226,20 @@ inline const char *deepAuthOutcome(uint16_t code) {
     }
 }
 
+// B3: authenticate on the pinned SSH session; no channel is allocated.
+inline void runEdgeAuthOnly(ssh_session session, AuthEvidence &out) {
+    out.measured = true;
+    const DeepAuthAttempt attempt = performDeepAuth(session);
+    out.code = attempt.code;
+    out.elapsedMs = attempt.elapsedMs;
+    out.completedAtMs = millis();
+    Serial.printf("[edge-auth] mode=PASSWORD | outcome=%s | ms=%lu | "
+                  "host_key=PIN_VERIFIED | forwarding=NOT_TESTED | "
+                  "filtering_verdict=INCONCLUSIVE\n",
+                  deepAuthOutcome(out.code),
+                  static_cast<unsigned long>(out.elapsedMs));
+}
+
 inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
     Serial.printf("[deep] %s | attempted=%u | channel_open=%u | "
                   "bytes=%lu/%lu | ms=%lu | code=%u\n",
@@ -191,16 +251,27 @@ inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
                   static_cast<unsigned>(e.code));
 }
 
-inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
+inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out,
+                                 AuthEvidence *authOut = nullptr) {
     out.measured = true;
     out.code = 90;
     // deepSettingsValid() restricts this witness to 127.0.0.1:18180.
     // Label even auth/channel failures as attempted Core-loopback evidence.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    out.routeKind = 2;  // Controlled public SSH-forward destination, NOT NPV proof.
+#else
     out.routeKind = PROBE_DEEP_AUTH_ONLY ? 0 : 1;
+#endif
     const uint32_t started = millis();
     const DeepAuthAttempt auth = performDeepAuth(session);
-    out.authCode = auth.code; // Local diagnostics only; DPT/2 wire unchanged.
+    out.authCode = auth.code;
     out.authMs = auth.elapsedMs;
+    if (authOut) {
+        authOut->measured = true;
+        authOut->code = auth.code;
+        authOut->elapsedMs = auth.elapsedMs;
+        authOut->completedAtMs = millis(); // Before channel/dwell measurements.
+    }
     Serial.printf("[deep] AUTH | mode=%s | outcome=%s | ms=%lu | "
                   "host_key=PIN_VERIFIED_BY_CALLER\n",
                   PROBE_DEEP_AUTH_MODE == 1 ? "PASSWORD" : "PUBLIC_KEY",
@@ -224,7 +295,12 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
         if (out.first.code == 1) {
             const uint32_t dwell = millis();
             while (WiFi.status() == WL_CONNECTED &&
-                   millis() - dwell < PROBE_DEEP_DWELL_MS &&
+                   millis() - dwell <
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+                       PROBE_LITE_DWELL_MS &&
+#else
+                       PROBE_DEEP_DWELL_MS &&
+#endif
                    ssh_is_connected(session)) {
                 vTaskDelay(pdMS_TO_TICKS(50));
             }

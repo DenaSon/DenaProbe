@@ -183,7 +183,8 @@ public:
     bool pushSsh(const Result &r, uint64_t completedUptime, bool wifiUp,
                  const HttpsQuality::Result *https = nullptr,
                  uint64_t httpsUptime = 0, uint64_t tcpUptime = 0,
-                 uint64_t deepUptime = 0) {
+                 uint64_t deepUptime = 0, uint64_t authUptime = 0) {
+        (void)authUptime; // also compiled by legacy non-B3 profiles.
         if (nextSequence_ == 0) return false;
         Message m{};
         m.sequence = next();
@@ -221,7 +222,11 @@ public:
                   static_cast<unsigned>(r.deep.code),
                   static_cast<unsigned long>(r.deep.authMs),
                   static_cast<unsigned long>(r.deep.sessionMs));
-            if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback, never NPV.
+            if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE && \
+    defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
+            if (r.deep.routeKind == 2) w.add(",\"rt\":2"); // Controlled public witness.
+#endif
             const TransferEvidence *samples[2] = {&r.deep.first, &r.deep.second};
             for (uint8_t i = 0; i < 2; ++i) {
                 const TransferEvidence &transfer = *samples[i];
@@ -235,6 +240,17 @@ public:
             }
             w.add("}");
         }
+#if ((defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY) || \
+     (defined(PROBE_B3_LITE) && PROBE_B3_LITE)) && \
+    defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
+        // Reserved signed DPT/2 extension; enable only after Core rollout.
+        if (version_ == 2 && r.auth.measured && authUptime != 0) {
+            w.add(",\"j\":{\"u\":%llu,\"s\":%u,\"ms\":%lu}",
+                  static_cast<unsigned long long>(authUptime),
+                  static_cast<unsigned>(r.auth.code),
+                  static_cast<unsigned long>(r.auth.elapsedMs));
+        }
+#endif
         if (https) {
             w.add(",\"h\":{\"c\":%u,\"u\":%llu", httpsCode(https->status),
                   static_cast<unsigned long long>(httpsUptime));
