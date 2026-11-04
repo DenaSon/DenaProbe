@@ -210,6 +210,13 @@ public:
             r.code == Code::SERVICE_ACCEPT_TIMEOUT ||
             r.code == Code::SERVICE_REQUEST_ERROR)
             w.add(",\"a\":%lu", static_cast<unsigned long>(r.serviceMs));
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE && \
+    defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
+        // Only the coordinated Lite/Core wire profile exposes this signed
+        // DNS-resolved Edge IPv4. Old Core rejects unknown DPT/2 fields.
+        if (version_ == 2 && r.resolvedEdgeIp[0] != '\0')
+            w.add(",\"ei\":\"%s\"", r.resolvedEdgeIp);
+#endif
         if (version_ == 2 && r.tcp.measured) {
             w.add(",\"c\":{\"u\":%llu,\"s\":%u,\"ms\":%lu}",
                   static_cast<unsigned long long>(tcpUptime),

@@ -99,6 +99,11 @@
 #endif
 #include "denaprobe/TelemetryTransport.h"
 #endif
+// Fail the build rather than silently sending DPT/1 without j/z/ei.
+#if defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE && \
+    PROBE_DPT_PROTOCOL_VERSION != 2
+#error "Lite wire requires signed DPT/2 protocol version 2"
+#endif
 
 namespace {
 using namespace DenaProbe;

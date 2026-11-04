@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <cstring>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -156,6 +157,13 @@ Result runSshTransport() {
         return result;
     }
 
+    // Reuse exactly the resolver result for TCP and SSH; never perform an
+    // extra lookup or substitute the Core host's IP.
+    const String resolvedIp = address.toString();
+    if (resolvedIp.length() > 0 && resolvedIp.length() < sizeof(result.resolvedEdgeIp)) {
+        strcpy(result.resolvedEdgeIp, resolvedIp.c_str());
+    }
+
     // Independent, bounded TCP connect; unlike ssh_connect() this verifies
     // reachability before any KEX or authentication can start.
     result.tcp.measured = true;
@@ -177,7 +185,6 @@ Result runSshTransport() {
 
     // A new connection is used for the feasibility spike, not the v0.0.4
     // banner socket. Hostname is resolved every run; no Core IP is configured.
-    const String resolvedIp = address.toString();
     SessionOwner owner;
     owner.session = ssh_new();
     if (!owner.session) {
