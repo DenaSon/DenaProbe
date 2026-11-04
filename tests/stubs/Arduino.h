@@ -38,6 +38,10 @@ inline bool forwardToLiteTarget = true;
 inline bool channelAlloc = true, secondSilent = false, wrongBody = false;
 inline bool shortBody = false, channelReadError = false, sessionConnected = true;
 inline uint32_t sessionDropAt = UINT32_MAX, channelBytes = 0;
+inline std::string forwardedHttpRequest;
+inline std::string forwardedHttpResponse;
+inline size_t forwardedHttpOffset = 0;
+inline bool httpPartialWrite = false, httpWriteError = false;
 enum class Response { NORMAL, SILENT_BODY, DRIP_BODY, SILENT_HEADERS,
                       DRIP_HEADERS, SILENT_CHUNK_HEADER };
 inline Response response = Response::NORMAL;
@@ -70,6 +74,8 @@ inline void reset() {
     channelAlloc = true; secondSilent = wrongBody = shortBody = false;
     channelReadError = false; sessionConnected = true;
     sessionDropAt = UINT32_MAX; channelBytes = 0;
+    forwardedHttpRequest.clear(); forwardedHttpResponse.clear();
+    forwardedHttpOffset = 0; httpPartialWrite = httpWriteError = false;
     response = Response::NORMAL;
     httpCode = 200; contentLength = payloadSize = 65536; bodyDelay = 20;
     logs.clear(); taskCreates = taskDeletes = 0; taskAlloc = true; worker = nullptr;
