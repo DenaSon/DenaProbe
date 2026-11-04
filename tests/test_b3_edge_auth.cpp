@@ -60,7 +60,7 @@ int main() {
 #if defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
     assert(has(m, "\"j\":{\"u\":995,\"s\":10"));
 #else
-    assert(!has(m, "\"a\":"));
+    assert(!has(m, "\"j\":"));
 #endif
     Fake::reset();
     Fake::authAgain = 1000;
