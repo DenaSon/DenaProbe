@@ -66,8 +66,23 @@ inline bool authSettingsValid() {
 }
 
 inline bool deepSettingsValid() {
-    return authSettingsValid() &&
-           strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") == 0 &&
+    if (!authSettingsValid()) return false;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    // A controlled public test responder, not a Core/Edge-local loopback.
+    // Any unconfigured / loopback / malformed host fails closed.
+    const char *target = PROBE_DEEP_REMOTE_HOST;
+    const size_t n = strlen(target);
+    if (n < 4 || n > 128 || strcmp(target, "127.0.0.1") == 0 ||
+        strcmp(target, "CHANGE_ME_LITE_HOST") == 0) return false;
+    for (size_t i = 0; i < n; ++i) {
+        const char x = target[i];
+        if (!((x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') ||
+              (x >= '0' && x <= '9') || x == '-' || x == '.')) return false;
+    }
+#else
+    if (strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") != 0) return false;
+#endif
+    return
            PROBE_DEEP_REMOTE_PORT >= 1 && PROBE_DEEP_REMOTE_PORT <= 65535 &&
            PROBE_DEEP_SAMPLE_BYTES >= 1 && PROBE_DEEP_SAMPLE_BYTES <= 65536UL &&
            PROBE_DEEP_DWELL_MS <= 30000UL;
@@ -209,16 +224,27 @@ inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
                   static_cast<unsigned>(e.code));
 }
 
-inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
+inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out,
+                                 AuthEvidence *authOut = nullptr) {
     out.measured = true;
     out.code = 90;
     // deepSettingsValid() restricts this witness to 127.0.0.1:18180.
     // Label even auth/channel failures as attempted Core-loopback evidence.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    out.routeKind = 2;  // Controlled public SSH-forward destination, NOT NPV proof.
+#else
     out.routeKind = PROBE_DEEP_AUTH_ONLY ? 0 : 1;
+#endif
     const uint32_t started = millis();
     const DeepAuthAttempt auth = performDeepAuth(session);
-    out.authCode = auth.code; // Local diagnostics only; DPT/2 wire unchanged.
+    out.authCode = auth.code;
     out.authMs = auth.elapsedMs;
+    if (authOut) {
+        authOut->measured = true;
+        authOut->code = auth.code;
+        authOut->elapsedMs = auth.elapsedMs;
+        authOut->completedAtMs = millis(); // Before channel/dwell measurements.
+    }
     Serial.printf("[deep] AUTH | mode=%s | outcome=%s | ms=%lu | "
                   "host_key=PIN_VERIFIED_BY_CALLER\n",
                   PROBE_DEEP_AUTH_MODE == 1 ? "PASSWORD" : "PUBLIC_KEY",
