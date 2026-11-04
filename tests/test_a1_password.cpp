@@ -2,6 +2,7 @@
 // NOT a live SSH test: no customer credentials, packets or targets are used.
 #define PROBE_DEEP_ENABLED 1
 #define PROBE_DEEP_AUTH_MODE 1
+#define PROBE_DEEP_AUTH_ONLY 0 // Existing two-transfer regression intentionally opts in.
 #define PROBE_DEEP_USER "deep-unit-user"
 #define PROBE_DEEP_PASSWORD "synthetic-unit-only"
 #define PROBE_DEEP_EVERY_N_CYCLES 1

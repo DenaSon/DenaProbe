@@ -27,6 +27,11 @@
 #ifndef PROBE_DEEP_PRIVATE_KEY_B64
 #define PROBE_DEEP_PRIVATE_KEY_B64 ""
 #endif
+// Safe A2 default: authenticate only; no SSH forwarding to unapproved targets.
+// Must be explicitly set to 0 AFTER destination and permit review.
+#ifndef PROBE_DEEP_AUTH_ONLY
+#define PROBE_DEEP_AUTH_ONLY 1
+#endif
 #ifndef PROBE_DEEP_REMOTE_HOST
 #define PROBE_DEEP_REMOTE_HOST "127.0.0.1"
 #endif
@@ -201,6 +206,13 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
 
     if (out.authCode != 1) {
         out.code = out.authCode;
+    } else if (PROBE_DEEP_AUTH_ONLY) {
+        // A2 first physical pilot: prove credentials without a channel open.
+        // Code 90 means DATA-PLANE NOT TESTED, never Deep SUCCESS (code 1).
+        out.code = 90;
+        Serial.println("[deep] CHANNEL | outcome=NOT_TESTED | reason=AUTH_ONLY");
+        Serial.println("[deep] TRANSFER_1 | outcome=NOT_TESTED");
+        Serial.println("[deep] TRANSFER_2 | outcome=NOT_TESTED");
     } else {
         // The same authenticated session is used for both independent
         // allowlisted forwarding channels with a controlled dwell in between.
