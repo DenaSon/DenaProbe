@@ -42,3 +42,5 @@ jobs:
         run: pio run -e esp32dev_r3_deep_compile
       - name: Compile A1 password SSH code (no credentials)
         run: pio run -e esp32dev_a1_password_compile
+      - name: Compile A2 auth-only pilot (no forwarding, no credentials)
+        run: pio run -e esp32dev_a2_auth_only_compile

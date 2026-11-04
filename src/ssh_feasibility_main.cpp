@@ -20,6 +20,15 @@
 #ifndef PROBE_SSH_PIN_SHA256_HEX
 #define PROBE_SSH_PIN_SHA256_HEX ""
 #endif
+ 
+// Stop A2 uploads at COMPILE TIME if a local private header changes the
+// enforced auth-only policy. The compiler flag alone is not enough because
+// the private header is included after command-line definitions.
+#if defined(PROBE_A2_AUTH_ONLY_ENFORCED) && PROBE_A2_AUTH_ONLY_ENFORCED
+#if PROBE_DEEP_ENABLED != 1 || PROBE_DEEP_AUTH_MODE != 1 || PROBE_DEEP_AUTH_ONLY != 1
+#error "A2 pilot requires Deep=1, Password=1, AuthOnly=1; review local probe_private.h"
+#endif
+#endif
 
 #include "denaprobe/ProbeConfig.h"
 #include "denaprobe/ProbeTypes.h"

@@ -21,6 +21,8 @@
 #define PROBE_DEEP_AUTH_MODE 1 // 1=password; 0=legacy public-key
 #define PROBE_DEEP_USER ""
 #define PROBE_DEEP_PASSWORD "" // LOCAL ignored file ONLY
+#define PROBE_DEEP_AUTH_ONLY 1 // A2: prove password first; NO forwarding
+// Set AUTH_ONLY to 0 only after a forwarding target is explicitly approved.
 #define PROBE_DEEP_PRIVATE_KEY_B64 "" // only for mode 0
 #define PROBE_DEEP_REMOTE_HOST "127.0.0.1"
 #define PROBE_DEEP_REMOTE_PORT 18180
