@@ -43,6 +43,7 @@ int main() {
     assert(authSettingsValid() && deepSettingsValid());
     const Result good = runSshTransport();
     assert(good.code == Code::PASS && good.tcp.code == 1);
+    assert(std::strcmp(good.resolvedEdgeIp, "192.0.2.1") == 0);
     assert(good.auth.measured && good.auth.code == 1);
     assert(good.deep.measured && good.deep.code == 1 && good.deep.routeKind == 2);
     assert(good.deep.first.requested == 8192 && good.deep.first.received == 8192);
@@ -58,16 +59,24 @@ int main() {
 #if defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
     assert(has(wire, "\"z\":{\"u\":995,\"s\":1"));
     assert(has(wire, "\"rt\":2"));
+    assert(has(wire, "\"ei\":\"192.0.2.1\""));
     assert(has(wire, "\"f\":{\"s\":1,\"r\":8192,\"n\":8192"));
     assert(has(wire, "\"g\":{\"s\":1,\"r\":8192,\"n\":8192"));
     assert(has(wire, "\"j\":{\"u\":990,\"s\":1"));
 #else
+    assert(!has(wire, "\"ei\":"));
     assert(!has(wire, "\"z\":"));
     assert(!has(wire, "\"j\":"));
 #endif
     assert(!has(wire, PROBE_DEEP_PASSWORD));
     assert(!has(wire, PROBE_DEEP_USER));
 
+    Fake::reset();
+    Fake::edgeDns = false;
+    const Result dnsFailed = runSshTransport();
+    assert(dnsFailed.code == Code::DNS_FAIL);
+    assert(dnsFailed.resolvedEdgeIp[0] == '\0');
+    assert(!has(message(dnsFailed), "\"ei\":"));
     Fake::reset();
     Fake::authRc = SSH_AUTH_DENIED;
     Result r = runSshTransport();
