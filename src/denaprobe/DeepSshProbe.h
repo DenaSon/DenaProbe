@@ -101,7 +101,7 @@ inline bool deepSettingsValid() {
               x == '-' || x == '.')) return false;
     }
     if (!hasLetter || !hasDot ||
-        strcmp(target + n - 6, ".local") == 0) return false;
+        (n >= 6 && strcmp(target + n - 6, ".local") == 0)) return false;
 #else
     if (strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") != 0) return false;
 #endif
