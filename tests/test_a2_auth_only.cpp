@@ -3,6 +3,7 @@
 #define PROBE_DEEP_ENABLED 1
 #define PROBE_DEEP_AUTH_MODE 1
 #define PROBE_DEEP_AUTH_ONLY 1
+#define PROBE_A2_PIN_ED25519 1
 #define PROBE_DEEP_USER "deep-unit-user"
 #define PROBE_DEEP_PASSWORD "synthetic-unit-only"
 #define PROBE_DEEP_EVERY_N_CYCLES 1
@@ -27,6 +28,7 @@ int main() {
     assert(r.deep.authCode == 1 && r.deep.code == 90);
     assert(r.deep.first.attempted == false && r.deep.second.attempted == false);
     assert(Fake::authCalls == 1 && Fake::channelOpens == 0);
+    assert(Fake::hostKeyEd25519Requested && Fake::hostKeyOptionsBeforeConnect);
     assert(logged("outcome=AUTH_SUCCESS"));
     assert(logged("CHANNEL | outcome=NOT_TESTED | reason=AUTH_ONLY"));
     assert(logged("TRANSFER_1 | outcome=NOT_TESTED"));
@@ -45,10 +47,12 @@ int main() {
     r = runSshTransport();
     assert(r.code == Code::PASS && r.deep.authCode == 10 && r.deep.code == 10);
     assert(Fake::channelOpens == 0);
+    assert(Fake::hostKeyEd25519Requested && Fake::hostKeyOptionsBeforeConnect);
     Fake::reset();
     Fake::badPin = true;
     r = runSshTransport();
     assert(r.code == Code::HOST_KEY_MISMATCH);
     assert(Fake::authCalls == 0 && Fake::channelOpens == 0);
+    assert(Fake::hostKeyEd25519Requested && Fake::hostKeyOptionsBeforeConnect);
     std::cout << "PASS A2 auth-only success/reject/bad-key with no forwarding, DPT2 NOT_TESTED\n";
 }

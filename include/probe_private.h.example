@@ -4,6 +4,9 @@
 // Never commit your real Edge hostname/IP, Core details or credentials.
 #define PROBE_EDGE_HOST "CHANGE_ME_EDGE_HOST"
 #define PROBE_EDGE_PORT 2252
+// Independently verify the negotiated Core SSH host public key via the Edge.
+// 64 lowercase hex chars of the SHA256(raw public-key blob); no colon/base64.
+#define PROBE_SSH_PIN_SHA256_HEX ""
 
 // On many ESP32 DevKit boards the small controllable LED is GPIO2.
 // Some ESP32-D0WD boards have no onboard programmable LED or use another pin.
