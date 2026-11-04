@@ -52,3 +52,7 @@ jobs:
         run: pio run -e esp32dev_b3_edge_auth_compile
       - name: Compile B3 reserved signed auth field (CI only, Core not upgraded)
         run: pio run -e esp32dev_b3_edge_auth_wire_compile
+      - name: Compile Lite SSH plus controlled transfer (legacy Core wire)
+        run: pio run -e esp32dev_lite_compile
+      - name: Compile Lite future signed transfer (CI only, Core not upgraded)
+        run: pio run -e esp32dev_lite_wire_compile
