@@ -40,3 +40,5 @@ jobs:
         run: pio run -e esp32dev_ssh_feasibility
       - name: Compile R3 opt-in authenticated channel code
         run: pio run -e esp32dev_r3_deep_compile
+      - name: Compile A1 password SSH code (no credentials)
+        run: pio run -e esp32dev_a1_password_compile
