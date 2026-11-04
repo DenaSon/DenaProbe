@@ -69,6 +69,9 @@ struct DeepEvidence {
 };
 
 struct Result {
+    // IPv4 resolved from the public Edge hostname in this same probe cycle.
+    // Empty for DNS failure/Wi-Fi loss; never reused across probes.
+    char resolvedEdgeIp[16]{};
     TcpEvidence tcp{};
     DeepEvidence deep{};
     AuthEvidence auth{}; // Auth measured independently from Core-loopback.
