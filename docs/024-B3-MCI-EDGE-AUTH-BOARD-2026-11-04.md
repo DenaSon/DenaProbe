@@ -28,8 +28,10 @@ only LOCAL ignored `include/probe_private.h`:
 Existing SSHD per-user `PermitOpen` or `AllowTcpForwarding` may restrict
 non-loopback destinations. Do not change global SSHD or production credentials
 automatically; have an operator verify and approve only this one target.
-Missing/invalid host, unauthorized forwarding or absent responder => NOT
-TESTED/CONFIG or UNKNOWN. Never infer carrier filtering from these alone.
+Missing/invalid public host => SSH password login is still tested,
+but the transfer is explicitly NOT_TESTED (no channel opens). Unauthorized
+forwarding or an absent responder => CONFIG/UNKNOWN until independently
+verified. Never infer carrier filtering from these alone.
 
 ## Lite build and safety gates
 Build: `esp32dev_lite_compile`.
