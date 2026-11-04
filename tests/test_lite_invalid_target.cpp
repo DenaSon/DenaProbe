@@ -18,8 +18,8 @@ int main() {
     assert(authSettingsValid() && !deepSettingsValid());
     const Result r = runSshTransport();
     assert(r.code == Code::PASS && r.auth.measured && r.auth.code == 1);
-    assert(r.deep.measured && r.deep.code == 90 && r.deep.routeKind == 2);
+    assert(r.deep.measured && r.deep.code == 90 && r.deep.routeKind == 3);
     assert(Fake::authCalls == 1 && Fake::channelOpens == 0);
     assert(Fake::hostKeyEd25519Requested && Fake::userBeforeConnect);
-    std::cout << "PASS Lite invalid loopback target, auth-only fallback, zero forwards\n";
+    std::cout << "PASS Lite invalid HTTP target, auth-only fallback, zero forwards\n";
 }
