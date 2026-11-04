@@ -36,9 +36,9 @@ Nominal SSH start interval is 30s but heavy worker scheduling can delay it.
 ## Phase 2 handoff (DO NOT flash the future wire profile yet)
 PlatformIO candidate: esp32dev_b3_edge_auth_wire_compile.
 New signed optional DPT/2 object:
-  "a":{"u":auth_completion_uptime_ms,"s":auth_code,"ms":auth_elapsed_ms}
+  "j":{"u":auth_completion_uptime_ms,"s":auth_code,"ms":auth_elapsed_ms}
 No password, username, host/IP or payload. There is no "z" Loopback/Deep
-object in B3. The current Core validator does NOT accept the new "a" field:
+object in B3. The current Core validator does NOT accept the new "j" field:
 updating the B3 firmware to this profile before Core Phase 2 is deployed
 would break telemetry acceptance. Phase 2 will add server validation, DB
 persistence, classifier, Rich UI and deduped incident/recovery notifications.
@@ -53,7 +53,7 @@ signals from authentication/configuration failures.
 - CI compiles default, A2, B1, B2, B3 safe and reserved wire environment.
 - Flash only the stage 1 B3 profile; verify Serial has edge-auth AUTH_SUCCESS
   without TRANSFER_1, DWELL or TRANSFER_2.
-- Verify Core DPT/2 HTTP200 ACK and signed records without "a" and "z".
+- Verify Core DPT/2 HTTP200 ACK and signed records without "j" and "z".
 - Preserve TLS certificate validation and keep old firmware rollback image.
 - B3 Stage 1 is accepted only after actual ESP32 serial and Core ACK evidence.
 
