@@ -11,7 +11,7 @@ The original A1 Deep experiment opens direct-tcpip forwarding immediately after 
 - New PROBE_DEEP_AUTH_ONLY defaults to 1 when Deep is compiled. Authentication can succeed on the real board while CHANNEL, TRANSFER_1 and TRANSFER_2 report NOT_TESTED; no forwarding channel is opened.
 - DPT/2 z.s remains 90 (unknown/data-plane untested), not 1 (two verified data samples). The local Serial message independently reports AUTH_SUCCESS/REJECTED/TIMEOUT/ERROR.
 - The existing A1 two-body synthetic tests opt in to transfer-mode explicitly; no wire codec or Core classifier changes.
-- The dedicated PlatformIO environment esp32dev_a2_auth_only_compile builds the safe pilot, and rejects a conflicting local header at compile time (Deep=1, Password=1, AuthOnly=1 required). Do not upload the generic A1 password compilation target for the first A2 test.
+- The dedicated PlatformIO environment esp32dev_a2_auth_only_compile builds the safe pilot, and rejects a conflicting local header at compile time (Deep=1, Password=1, AuthOnly=1 required). The pilot additionally asks libssh for only ssh-ed25519 host keys before connecting; a mismatched SHA256 pin still fails closed before credentials. The exact ED25519 fingerprint and actual password method must be checked independently by the operator before flash. Do not upload the generic A1 password compilation target for the first A2 test.
 
 ## Gate 1 — read-only board baseline (Windows PowerShell)
 

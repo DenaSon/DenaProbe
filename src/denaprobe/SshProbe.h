@@ -194,6 +194,15 @@ Result runSshTransport() {
         return result;
     }
 
+// A2 pilot: require the independently verified Core ED25519 host key.
+// Only the isolated A2 environment sets this; legacy modes are unchanged.
+#if defined(PROBE_A2_PIN_ED25519) && PROBE_A2_PIN_ED25519
+    if (ssh_options_set(owner.session, SSH_OPTIONS_HOSTKEYS, "ssh-ed25519") != SSH_OK) {
+        result.code = Code::SSH_OPTIONS_FAILED;
+        return result; // Fail closed before SSH connect and before any credentials.
+    }
+#endif
+
 #if PROBE_DEEP_ENABLED
     if (deepSettingsValid() &&
         ssh_options_set(owner.session, SSH_OPTIONS_USER, PROBE_DEEP_USER) != SSH_OK) {

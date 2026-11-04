@@ -31,6 +31,7 @@ inline int transportRc = 0, serviceRc = 0;
 // Synthetic A1 libssh controls; no live credentials.
 inline int authRc = 0, authAgain = 0, authCalls = 0, connectCalls = 0;
 inline bool userBeforeConnect = false;
+inline bool hostKeyEd25519Requested = false, hostKeyOptionsBeforeConnect = false;
 inline int channelOpenRc = 0, channelAgain = 0, channelOpens = 0;
 inline bool channelAlloc = true, secondSilent = false, wrongBody = false;
 inline bool shortBody = false, channelReadError = false, sessionConnected = true;
@@ -60,6 +61,7 @@ inline void reset() {
     transportRc = serviceRc = 0;
     authRc = authAgain = authCalls = connectCalls = 0;
     userBeforeConnect = false;
+    hostKeyEd25519Requested = hostKeyOptionsBeforeConnect = false;
     channelOpenRc = channelAgain = channelOpens = 0;
     channelAlloc = true; secondSilent = wrongBody = shortBody = false;
     channelReadError = false; sessionConnected = true;

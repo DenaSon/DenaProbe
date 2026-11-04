@@ -7,11 +7,16 @@ using ssh_channel = void *;
 constexpr int SSH_OK = 0, SSH_ERROR = -1, SSH_AGAIN = -2, SSH_PACKET_NOT_USED = 0;
 constexpr int SSH_AUTH_SUCCESS = 0, SSH_AUTH_DENIED = 1, SSH_AUTH_PARTIAL = 2;
 constexpr int SSH_AUTH_AGAIN = 4;
-constexpr int SSH_OPTIONS_HOST = 1, SSH_OPTIONS_PORT = 2, SSH_OPTIONS_TIMEOUT = 3, SSH_OPTIONS_USER = 4;
+constexpr int SSH_OPTIONS_HOST = 1, SSH_OPTIONS_PORT = 2, SSH_OPTIONS_TIMEOUT = 3, SSH_OPTIONS_USER = 4, SSH_OPTIONS_HOSTKEYS = 5;
 constexpr int SSH_PUBLICKEY_HASH_SHA256 = 1;
 inline void *ssh_new() { static int session; return &session; }
 inline void ssh_free(void *) {}
-inline int ssh_options_set(void *, int option, const void *) {
+inline int ssh_options_set(void *, int option, const void *value) {
+    if (option == SSH_OPTIONS_HOSTKEYS) {
+        Fake::hostKeyOptionsBeforeConnect = (Fake::connectCalls == 0);
+        Fake::hostKeyEd25519Requested =
+            (std::strcmp(static_cast<const char *>(value), "ssh-ed25519") == 0);
+    }
     if (option == SSH_OPTIONS_USER && Fake::connectCalls == 0)
         Fake::userBeforeConnect = true;
     return SSH_OK;
