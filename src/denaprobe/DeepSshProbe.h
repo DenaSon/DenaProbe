@@ -95,8 +95,9 @@ inline TransferEvidence deepTransfer(ssh_session session) {
     bool wrongBody = false;
     while (WiFi.status() == WL_CONNECTED &&
            millis() - bodyStart < 12000UL && out.received < out.requested) {
+        const uint32_t remaining = out.requested - out.received;
         const int want = static_cast<int>(
-            std::min(static_cast<uint32_t>(sizeof(chunk)), out.requested - out.received));
+            remaining < sizeof(chunk) ? remaining : sizeof(chunk));
         rc = ssh_channel_read_timeout(channel, chunk, want, 0, 100);
         if (rc > 0) {
             for (int i = 0; i < rc; ++i)
