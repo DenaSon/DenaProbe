@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <cstring>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
