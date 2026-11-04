@@ -1,6 +1,6 @@
 # DenaProbe — Password SSH and representative NPV data-path probes
 **Date:** 2026-11-04  
-**Status:** APPROVED SCOPE / IMPLEMENTATION NOT STARTED  
+**Status:** A0 COMPLETE; A1 SOURCE/CI PASS (PR #15); A2 PHYSICAL PILOT NOT STARTED  
 **Primary repo:** `DenaSon/DenaProbe` (ESP32). **Companion:** `DenaSon/nvl-bot` (Core / Telegram).
 **Decision:** Board-first engineering and real serial validation; Core/Telegram changes only after explicit hardware acceptance.
 

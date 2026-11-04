@@ -1,7 +1,7 @@
 # DenaProbe A1 — Firmware SSH Password Authentication review
 **Date:** 2026-11-04
 **Parent:** [017 — Password SSH / NPV path](017-DEEP-SSH-PASSWORD-DATA-PATH-FIELD-PLAN-2026-11-04.md)
-**Status:** Implementation complete pending CI/review; **A2 physical pilot NOT approved.**
+**Status:** A1 SOURCE/CI PASS on commit c93f7de; **A2 physical pilot NOT approved.**
 
 ## A1 source and security boundary
 
@@ -33,3 +33,18 @@ Host tests simulate libssh. A successful compiler run does not establish runtime
 Before any board flash, save the actual board firmware/partition layout and known-good rollback image; independently verify the SSH host key pin; confirm effective server password versus keyboard-interactive policy and an authorized forwarding target. A2 needs explicit pilot approval, serial memory/watchdog measurements, at least 30 stable cycles and MCI/RighTel same-target reference comparisons. No Core rollout before accepted A2.
 
 A1 deliberately excludes OTA, credential-management API, arbitrary forwarding, live SSHD changes and universal NPV equivalence claims.
+
+## A1 CI evidence — 2026-11-04
+
+- [PR #15](https://github.com/DenaSon/DenaProbe/pull/15), source revision c93f7de5b0603d0de19ac220da1e3fa68cbf6fe0.
+- [R1 build+host checks](https://github.com/DenaSon/DenaProbe/actions/runs/41825504801): SUCCESS.
+- [R3 deep/contract checks](https://github.com/DenaSon/DenaProbe/actions/runs/41825504912): SUCCESS. Four PlatformIO environments were compiled.
+- Synthetic host tests: 14 A1 password-auth scenarios PASSED. Existing R1 tests and cross-language DPT fixture PASSED.
+- Default: Flash 954,748 / 1,310,720 B (72.8%); static RAM 47,008 / 327,680 B (14.3%).
+- Feasibility: Flash 1,421,100 / 1,966,080 B (72.3%); static RAM 65,796 / 327,680 B (20.1%).
+- Existing key-auth Deep: Flash 1,567,980 / 1,966,080 B (79.8%); static RAM 65,804 / 327,680 B (20.1%).
+- **New password Deep:** Flash **1,429,856 / 1,966,080 B (72.7%)**, headroom **536,224 B**; static RAM **65,804 / 327,680 B (20.1%)**.
+- Compiler emitted existing vendor LibSSH-ESP32 warnings, but no failed build or test. These figures are static compilation reports, not runtime heap or flash-layout proof for the physical board.
+- Diff review excluded real SSH host/username/password, monitored account details and production infrastructure; the only nonempty password string is explicitly synthetic in the host tests. .gitignore contains the local-only private-header rule.
+
+**A1 conclusion:** ready for source merge after PR checks/review; neither flashing nor Core/Telegram work is authorized. **A2 remains gated on real hardware and SSH server verification.**
