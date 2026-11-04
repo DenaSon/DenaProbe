@@ -82,9 +82,11 @@ inline bool deepSettingsValid() {
         PROBE_LITE_DWELL_MS > 10000UL ||
         PROBE_LITE_EVERY_N_CYCLES < 1 ||
         PROBE_LITE_EVERY_N_CYCLES > 30) return false;
-    // Require a hostname with an alphabetic public DNS suffix; reject literal
-    // loopback/private IPs and the unused placeholder. Public routability
-    // still needs a separate operator-approved Core-side preflight.
+    // Fixed audited HTTP test service, never a general-purpose SSH proxy.
+    // A public third-party outage is NOT proof of carrier filtering.
+    if (strcmp(PROBE_DEEP_REMOTE_HOST, "speedtest.tele2.net") != 0 ||
+        PROBE_DEEP_REMOTE_PORT != 80 ||
+        PROBE_LITE_SAMPLE_BYTES != 8192UL) return false;
     const char *target = PROBE_DEEP_REMOTE_HOST;
     const size_t n = strlen(target);
     if (n < 4 || n > 128 ||
@@ -111,8 +113,11 @@ inline bool deepSettingsValid() {
            PROBE_DEEP_DWELL_MS <= 30000UL;
 }
 
-// A controlled relay-local TCP responder sends exactly N bytes of the byte 0x5A
-// on each fresh forwarded connection, then closes. No user traffic is inspected.
+// Lite route 3 sends one bounded HTTP Range request to a fixed public test
+// service over SSH direct-tcpip. A 200/206 response and >=8KiB of BODY data
+// prove bidirectional transfer through this SSH session. This does NOT prove
+// all NPV destinations, censorship attribution, HTTP integrity, or site uptime.
+// B1/B2 route 1 deliberately retain the original loopback byte witness.
 inline TransferEvidence deepTransfer(ssh_session session) {
     TransferEvidence out{};
     out.attempted = true;
@@ -121,7 +126,7 @@ inline TransferEvidence deepTransfer(ssh_session session) {
 #else
     out.requested = PROBE_DEEP_SAMPLE_BYTES;
 #endif
-    out.code = 23; // channel error until opened
+    out.code = 23; // Channel/setup failure (not a data-stall verdict).
     const uint32_t start = millis();
     ssh_channel channel = ssh_channel_new(session);
     if (!channel) { out.elapsedMs = millis() - start; return out; }
@@ -140,7 +145,99 @@ inline TransferEvidence deepTransfer(ssh_session session) {
         return out;
     }
     out.channelOpened = true;
-    out.code = 20;  // timeout until complete
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    // The host is restricted by deepSettingsValid(), and HTTP headers are
+    // never trusted as data. Only the first 8KiB of response BODY is counted.
+    char request[220]{};
+    const int requestLength = snprintf(request, sizeof(request),
+        "GET /1MB.zip HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Range: bytes=0-8191\r\n"
+        "Accept-Encoding: identity\r\n"
+        "Connection: close\r\n\r\n", PROBE_DEEP_REMOTE_HOST);
+    if (requestLength <= 0 ||
+        static_cast<size_t>(requestLength) >= sizeof(request)) {
+        out.code = 90;
+    } else {
+        // Bounded partial writes, never assume one ssh_channel_write is enough.
+        uint32_t written = 0;
+        const uint32_t writeStart = millis();
+        while (WiFi.status() == WL_CONNECTED &&
+               written < static_cast<uint32_t>(requestLength) &&
+               millis() - writeStart < 3000UL) {
+            rc = ssh_channel_write(channel, request + written,
+                                   static_cast<uint32_t>(requestLength) - written);
+            if (rc < 0 && rc != SSH_AGAIN) break;
+            if (rc > 0) written += static_cast<uint32_t>(rc);
+            else vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (written != static_cast<uint32_t>(requestLength)) {
+            out.code = WiFi.status() == WL_CONNECTED ? 23 : 90;
+        } else {
+            out.code = 20; // timed out until enough HTTP BODY bytes arrive.
+            char header[2049]{};
+            size_t headerBytes = 0;
+            bool headerDone = false;
+            const uint32_t readStart = millis();
+            uint8_t chunk[512]{};
+            while (WiFi.status() == WL_CONNECTED &&
+                   millis() - readStart < 12000UL &&
+                   out.received < out.requested) {
+                const uint32_t remaining = out.requested - out.received;
+                // Extra room for header+body in one read. Do not count header.
+                const uint32_t want = remaining < sizeof(chunk)
+                    ? remaining : sizeof(chunk);
+                rc = ssh_channel_read_timeout(channel, chunk, want, 0, 100);
+                if (rc > 0) {
+                    for (int i = 0; i < rc; ++i) {
+                        if (!headerDone) {
+                            if (headerBytes >= 2048) {
+                                out.code = 24; // Unbounded/non-HTTP headers.
+                                break;
+                            }
+                            header[headerBytes++] = static_cast<char>(chunk[i]);
+                            header[headerBytes] = '\0';
+                            if (headerBytes >= 4 &&
+                                memcmp(header + headerBytes - 4, "\r\n\r\n", 4) == 0) {
+                                headerDone = true;
+                                const bool httpVersion =
+                                    headerBytes >= 12 &&
+                                    memcmp(header, "HTTP/1.", 7) == 0;
+                                const bool goodStatus = httpVersion &&
+                                    ((memcmp(header + 9, "200", 3) == 0) ||
+                                     (memcmp(header + 9, "206", 3) == 0));
+                                if (!goodStatus ||
+                                    strstr(header, "Transfer-Encoding: chunked") ||
+                                    strstr(header, "transfer-encoding: chunked")) {
+                                    out.code = 24; // Redirect/status/encoding.
+                                    break;
+                                }
+                            }
+                        } else {
+                            ++out.received;
+                            if (out.received >= out.requested) break;
+                        }
+                    }
+                    if (out.code == 24) break;
+                } else if (rc == SSH_ERROR) {
+                    out.code = 21;
+                    break;
+                } else if (rc == 0 && ssh_channel_is_eof(channel)) {
+                    out.code = 22; // Premature EOF.
+                    break;
+                } else {
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+            }
+            if (headerDone && out.received == out.requested)
+                out.code = 1;
+            else if (WiFi.status() != WL_CONNECTED)
+                out.code = 90;
+        }
+    }
+#else
+    // Historical B1/B2: fixed 0x5A local loopback TCP responder.
+    out.code = 20;
     const uint32_t bodyStart = millis();
     uint8_t chunk[512]{};
     bool wrongBody = false;
@@ -164,10 +261,11 @@ inline TransferEvidence deepTransfer(ssh_session session) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
-    out.elapsedMs = millis() - start;
     if (out.received == out.requested && !wrongBody) out.code = 1;
-    else if (wrongBody) out.code = 21; // integrity fail, not "complete"
+    else if (wrongBody) out.code = 21;
     else if (WiFi.status() != WL_CONNECTED) out.code = 90;
+#endif
+    out.elapsedMs = millis() - start;
     ssh_channel_close(channel);
     ssh_channel_free(channel);
     return out;
@@ -255,10 +353,9 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out,
                                  AuthEvidence *authOut = nullptr) {
     out.measured = true;
     out.code = 90;
-    // deepSettingsValid() restricts this witness to 127.0.0.1:18180.
-    // Label even auth/channel failures as attempted Core-loopback evidence.
+    // Route is recorded independently of authentication or data success.
 #if defined(PROBE_B3_LITE) && PROBE_B3_LITE
-    out.routeKind = 2;  // Controlled public SSH-forward destination, NOT NPV proof.
+    out.routeKind = 3;  // Public HTTP Range over SSH-forward, NOT full NPV proof.
 #else
     out.routeKind = PROBE_DEEP_AUTH_ONLY ? 0 : 1;
 #endif
