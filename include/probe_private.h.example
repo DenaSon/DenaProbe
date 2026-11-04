@@ -46,3 +46,16 @@
 // local header. Build esp32dev_b3_edge_auth_compile; no forwarding/Responder.
 // Phase 1 keeps DPT/2 TCP/SSH/HTTPS backward-compatible and reports Auth on
 // Serial. Reserved *_wire_compile MUST NOT be uploaded until Core Phase 2.
+
+// Lite profile (esp32dev_lite_compile):
+// 1) Keep the same verified public PROBE_EDGE_HOST:2252, password user and pin.
+// 2) Keep PROBE_DEEP_AUTH_ONLY=0 so SSH forwarding can test payload data.
+// 3) Change PROBE_DEEP_REMOTE_HOST to a separately approved FIRST-PARTY
+//    public TCP responder hostname (NOT 127.0.0.1 and NOT Core-loopback).
+//    It must send 8192 bytes of 0x5A immediately on each fresh TCP connection.
+//    PROBE_DEEP_REMOTE_PORT must be the actual restricted responder port.
+// 4) One SSH login; 2 x 8KiB, 5-second dwell, every eligible SSH cycle.
+//    No OTA, external HTTPS quality sample or arbitrary SOCKS client.
+// SSHD PermitOpen/account rules MAY need a separately approved exact-target
+// permission; an error is CONFIG/UNKNOWN, not evidence of MCI filtering.
+// The build does not reveal the password or change Core or SSHD.
