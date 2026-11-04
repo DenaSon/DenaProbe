@@ -63,5 +63,14 @@ with tempfile.TemporaryDirectory(prefix="denaprobe-r1-") as build:
             str(root / "tests/test_lite.cpp"), "-o", str(lite_executable),
         ], check=True)
         subprocess.run([str(lite_executable)], check=True, timeout=20)
+    invalid_executable = Path(build) / "lite-invalid-target"
+    subprocess.run([
+        os.environ.get("CXX", "g++"), "-std=c++17", "-O1", "-Wall", "-Wextra",
+        "-Werror", "-Wno-format", "-DDENAPROBE_HOST_TEST",
+        "-I", str(root / "tests/stubs"),
+        str(root / "tests/test_lite_invalid_target.cpp"),
+        "-o", str(invalid_executable),
+    ], check=True)
+    subprocess.run([str(invalid_executable)], check=True, timeout=20)
     subprocess.run([sys.executable, str(root / "tests/test_a2_partition_report.py")], check=True, timeout=10)
     subprocess.run([sys.executable, str(root / "tests/test_dpt_vector.py")], check=True, timeout=10)
