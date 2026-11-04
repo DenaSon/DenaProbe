@@ -46,9 +46,9 @@ int main() {
     Dpt::Message m = encode(result);
     assert(has(m, "\"c\":{") && !has(m, "\"z\":"));
 #if defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
-    assert(has(m, "\"a\":{\"u\":995,\"s\":1"));
+    assert(has(m, "\"j\":{\"u\":995,\"s\":1"));
 #else
-    assert(!has(m, "\"a\":"));
+    assert(!has(m, "\"j\":"));
 #endif
     assert(!has(m, PROBE_DEEP_PASSWORD) && !has(m, PROBE_DEEP_USER));
     Fake::reset();
@@ -58,7 +58,7 @@ int main() {
     assert(Fake::authCalls == 1 && Fake::channelOpens == 0);
     m = encode(result);
 #if defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
-    assert(has(m, "\"a\":{\"u\":995,\"s\":10"));
+    assert(has(m, "\"j\":{\"u\":995,\"s\":10"));
 #else
     assert(!has(m, "\"a\":"));
 #endif
