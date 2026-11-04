@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix="denaprobe-r1-") as build:
             os.environ.get("CXX", "g++"), "-std=c++17", "-O1", "-Wall", "-Wextra",
             "-Werror", "-Wno-format", "-DDENAPROBE_HOST_TEST",
             f"-DPROBE_B3_LITE_WIRE={wire}", f"-DPROBE_B3_AUTH_WIRE={wire}",
+            f"-DPROBE_DPT_PROTOCOL_VERSION={2 if wire else 1}",
             "-I", str(root / "tests/stubs"),
             str(root / "tests/test_lite.cpp"), "-o", str(lite_executable),
         ], check=True)
