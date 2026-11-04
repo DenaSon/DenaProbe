@@ -41,3 +41,8 @@
 // B2 after Core rollout: same explicit B1 forwarding settings, but build the
 // B2-only environment to emit signed z.rt=1 (CORE_LOOPBACK) + z.f/z.g.
 // Never treat Core-loopback success as NPV customer internet egress.
+
+// B3 MCI Edge-auth: set PROBE_DEEP_AUTH_ONLY back to 1 in your ignored
+// local header. Build esp32dev_b3_edge_auth_compile; no forwarding/Responder.
+// Phase 1 keeps DPT/2 TCP/SSH/HTTPS backward-compatible and reports Auth on
+// Serial. Reserved *_wire_compile MUST NOT be uploaded until Core Phase 2.
