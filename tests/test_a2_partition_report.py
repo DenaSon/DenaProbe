@@ -5,6 +5,7 @@ from pathlib import Path
 from subprocess import run
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ops.a2_partition_report import parse_partitions, PARTITION
 
 def fixture(slot_size: int) -> bytes:
@@ -31,7 +32,7 @@ else:
 with tempfile.TemporaryDirectory() as tmp:
     image = Path(tmp) / "board.bin"
     image.write_bytes(fixture(0x140000))
-    command = [sys.executable, "ops/a2_partition_report.py", str(image)]
+    command = [sys.executable, str(Path(__file__).resolve().parents[1] / "ops/a2_partition_report.py"), str(image)]
     result = run(command, check=True, capture_output=True, text=True)
     assert "CURRENT_MAX_APP_BYTES=1310720" in result.stdout
     assert "A2_GATE=HOLD_VERIFY_NON_4MB_FLASH" in result.stdout

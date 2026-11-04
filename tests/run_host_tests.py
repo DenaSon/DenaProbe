@@ -29,4 +29,5 @@ with tempfile.TemporaryDirectory(prefix="denaprobe-r1-") as build:
         str(root / "tests/test_a2_auth_only.cpp"), "-o", str(auth_only_executable),
     ], check=True)
     subprocess.run([str(auth_only_executable)], check=True, timeout=20)
+    subprocess.run([sys.executable, str(root / "tests/test_a2_partition_report.py")], check=True, timeout=10)
     subprocess.run([sys.executable, str(root / "tests/test_dpt_vector.py")], check=True, timeout=10)
