@@ -33,6 +33,19 @@
 #include "denaprobe/ProbeConfig.h"
 #include "denaprobe/ProbeTypes.h"
 #include "denaprobe/SshProbe.h"
+// An explicit B1-only compile-time gate. The ignored local header is included
+// before these checks; a stale auth-only or noncanonical port fails the build.
+#if defined(PROBE_B1_FORWARDING_PILOT) && PROBE_B1_FORWARDING_PILOT
+#if PROBE_DEEP_ENABLED != 1 || PROBE_DEEP_AUTH_MODE != 1 || PROBE_DEEP_AUTH_ONLY != 0
+#error "B1 requires Deep=1, Password=1 and intentional AuthOnly=0 in local private config"
+#endif
+#if PROBE_DEEP_REMOTE_PORT != 18180 || PROBE_DEEP_SAMPLE_BYTES != 16384UL || PROBE_DEEP_DWELL_MS != 20000UL
+#error "B1 requires Core-loopback port 18180, 16KiB sample and 20s dwell"
+#endif
+#if !defined(PROBE_A2_PIN_ED25519) || PROBE_A2_PIN_ED25519 != 1
+#error "B1 requires independently verified ED25519 host-key algorithm"
+#endif
+#endif
 #include "denaprobe/HttpsProbe.h"
 #include "denaprobe/ProbeScheduler.h"
 #include "denaprobe/ProbeEvents.h"
