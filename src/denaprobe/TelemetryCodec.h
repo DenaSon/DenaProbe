@@ -232,7 +232,8 @@ public:
             if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback.
 #if defined(PROBE_B3_LITE) && PROBE_B3_LITE && \
     defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
-            if (r.deep.routeKind == 2) w.add(",\"rt\":2"); // Controlled public witness.
+            if (r.deep.routeKind == 2) w.add(",\"rt\":2"); // Historical fixed 8KiB witness.
+            if (r.deep.routeKind == 3) w.add(",\"rt\":3"); // Public HTTP over SSH-forward.
 #endif
             const TransferEvidence *samples[2] = {&r.deep.first, &r.deep.second};
             for (uint8_t i = 0; i < 2; ++i) {
