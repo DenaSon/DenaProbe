@@ -47,6 +47,25 @@
 #error "B3 stage1 must NOT transmit auth fields to old Core"
 #endif
 #endif
+// Lite: pinned public Edge login plus controlled non-loopback data witness.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+#if PROBE_DEEP_ENABLED != 1 || PROBE_DEEP_AUTH_MODE != 1 || PROBE_DEEP_AUTH_ONLY != 0
+#error "Lite requires Deep=1, password auth and AUTH_ONLY=0 in private config"
+#endif
+#if !defined(PROBE_A2_PIN_ED25519) || PROBE_A2_PIN_ED25519 != 1
+#error "Lite requires pinned Ed25519 host key"
+#endif
+#if (defined(PROBE_B1_FORWARDING_PILOT) && PROBE_B1_FORWARDING_PILOT) || \
+    (defined(PROBE_B2_LOOPBACK_TELEMETRY) && PROBE_B2_LOOPBACK_TELEMETRY) || \
+    (defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY)
+#error "Lite cannot be mixed with historical B1/B2/auth-only modes"
+#endif
+#if defined(PROBE_B3_BOARD_STAGE1) && PROBE_B3_BOARD_STAGE1 && \
+    ((defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE) || \
+     (defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE))
+#error "Lite stage1 must not send new fields to Core"
+#endif
+#endif
 #include "denaprobe/ProbeConfig.h"
 #include "denaprobe/ProbeTypes.h"
 #include "denaprobe/SshProbe.h"
