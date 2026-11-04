@@ -1,3 +1,8 @@
+> HISTORICAL: The external fixed-byte responder and `z.rt=2` documented below
+> are superseded for new Lite deployments by
+> [025-LITE-HTTP-OVER-SSH-DEPLOY-2026-11-04.md](025-LITE-HTTP-OVER-SSH-DEPLOY-2026-11-04.md).
+> Do not use the instructions below to flash the current HTTP route 3 profile.
+
 # DenaProbe Lite — MCI SSH access + transfer (Board Phase 1)
 Date: 2026-11-04. Source candidate. NOT YET FLASHED or accepted by hardware.
 

@@ -47,15 +47,15 @@
 // Phase 1 keeps DPT/2 TCP/SSH/HTTPS backward-compatible and reports Auth on
 // Serial. Reserved *_wire_compile MUST NOT be uploaded until Core Phase 2.
 
-// Lite profile (esp32dev_lite_compile):
-// 1) Keep the same verified public PROBE_EDGE_HOST:2252, password user and pin.
-// 2) Keep PROBE_DEEP_AUTH_ONLY=0 so SSH forwarding can test payload data.
-// 3) Change PROBE_DEEP_REMOTE_HOST to a separately approved FIRST-PARTY
-//    public TCP responder hostname (NOT 127.0.0.1 and NOT Core-loopback).
-//    It must send 8192 bytes of 0x5A immediately on each fresh TCP connection.
-//    PROBE_DEEP_REMOTE_PORT must be the actual restricted responder port.
-// 4) One SSH login; 2 x 8KiB, 5-second dwell, every eligible SSH cycle.
-//    No OTA, external HTTPS quality sample or arbitrary SOCKS client.
-// SSHD PermitOpen/account rules MAY need a separately approved exact-target
-// permission; an error is CONFIG/UNKNOWN, not evidence of MCI filtering.
-// The build does not reveal the password or change Core or SSHD.
+// Lite HTTP profile: no new domain, no dedicated responder, no second VPS.
+// Keep the existing Edge:2252, pinned host key and test account.
+// Keep PROBE_DEEP_AUTH_ONLY=0 so SSH can forward to an HTTP download server.
+// REPLACE old loopback defaults in your ignored local file with:
+//   PROBE_DEEP_REMOTE_HOST "speedtest.tele2.net"
+//   PROBE_DEEP_REMOTE_PORT 80
+// The code GETs /1MB.zip, Range 0-8191, twice over one authenticated SSH
+// session with a 5-second dwell; it validates 200/206 and 8192 BODY bytes.
+// This third-party endpoint may fail independently. It is a path witness,
+// not proof of full NPV customer egress or censorship.
+// An exact per-account SSHD PermitOpen may need explicit approval.
+// The build does not reveal secrets or change Core or SSHD.

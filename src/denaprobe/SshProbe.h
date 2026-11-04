@@ -322,7 +322,7 @@ Result runSshTransport() {
                 }
                 result.deep.measured = true;
                 result.deep.code = 90;
-                result.deep.routeKind = 2;
+                result.deep.routeKind = 3;
                 result.deep.completedAtMs = millis();
                 Serial.println("[lite] DATA_TARGET_NOT_READY | transfer=NOT_TESTED | "
                                "no_network_failure_verdict");

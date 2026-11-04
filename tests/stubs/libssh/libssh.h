@@ -55,24 +55,56 @@ inline ssh_channel ssh_channel_new(ssh_session) {
 }
 inline int ssh_channel_open_forward(ssh_channel, const char *host, int port, const char *, int) {
     Fake::forwardToApprovedLoopback &= (std::strcmp(host, "127.0.0.1") == 0 && port == 18180);
-    Fake::forwardToLiteTarget &= (std::strcmp(host, "witness.example") == 0 && port == 18180);
+    Fake::forwardToLiteTarget &= (std::strcmp(host, "speedtest.tele2.net") == 0 && port == 80);
     Fake::authBeforeForward &= (Fake::authCalls > 0 && Fake::authRc == SSH_AUTH_SUCCESS);
     ++Fake::channelOpens;
     Fake::tick(5);
     if (Fake::channelOpens <= Fake::channelAgain) return SSH_AGAIN;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    if (Fake::channelOpenRc == SSH_OK) {
+        Fake::forwardedHttpOffset = 0;
+        Fake::forwardedHttpRequest.clear();
+        const char *status = Fake::httpCode == 206 ? "206 Partial Content" :
+                             Fake::httpCode == 302 ? "302 Found" : "200 OK";
+        Fake::forwardedHttpResponse = std::string("HTTP/1.1 ") + status +
+            "\r\nContent-Length: 8192\r\nConnection: close\r\n\r\n";
+        Fake::forwardedHttpResponse.append(Fake::shortBody ? 512 : 8192, 'A');
+    }
+#endif
     return Fake::channelOpenRc;
+}
+inline int ssh_channel_write(ssh_channel, const void *buffer, uint32_t count) {
+    Fake::tick(2);
+    if (Fake::httpWriteError) return SSH_ERROR;
+    const uint32_t actual = Fake::httpPartialWrite ? std::min(count, 7U) : count;
+    Fake::forwardedHttpRequest.append(static_cast<const char *>(buffer), actual);
+    return static_cast<int>(actual);
 }
 inline int ssh_channel_read_timeout(ssh_channel, void *buffer, uint32_t count, int, int) {
     Fake::tick(10);
     if (Fake::channelReadError) return SSH_ERROR;
     if (Fake::secondSilent && Fake::channelOpens >= 2) return SSH_AGAIN;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    if (Fake::forwardedHttpOffset >= Fake::forwardedHttpResponse.size()) return 0;
+    const size_t n = std::min(static_cast<size_t>(count),
+        Fake::forwardedHttpResponse.size() - Fake::forwardedHttpOffset);
+    std::memcpy(buffer, Fake::forwardedHttpResponse.data() +
+        Fake::forwardedHttpOffset, n);
+    Fake::forwardedHttpOffset += n;
+    return static_cast<int>(n);
+#else
     if (Fake::shortBody && Fake::channelBytes >= 512) return 0;
     std::memset(buffer, Fake::wrongBody ? 0x00 : 0x5A, count);
     Fake::channelBytes += count;
     return static_cast<int>(count);
+#endif
 }
 inline int ssh_channel_is_eof(ssh_channel) {
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    return Fake::forwardedHttpOffset >= Fake::forwardedHttpResponse.size();
+#else
     return Fake::shortBody && Fake::channelBytes >= 512;
+#endif
 }
 inline int ssh_channel_close(ssh_channel) { return SSH_OK; }
 inline void ssh_channel_free(ssh_channel) {}
