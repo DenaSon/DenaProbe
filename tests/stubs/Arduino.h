@@ -33,6 +33,7 @@ inline int authRc = 0, authAgain = 0, authCalls = 0, connectCalls = 0;
 inline bool userBeforeConnect = false;
 inline bool hostKeyEd25519Requested = false, hostKeyOptionsBeforeConnect = false;
 inline int channelOpenRc = 0, channelAgain = 0, channelOpens = 0;
+inline bool forwardToApprovedLoopback = true, authBeforeForward = true;
 inline bool channelAlloc = true, secondSilent = false, wrongBody = false;
 inline bool shortBody = false, channelReadError = false, sessionConnected = true;
 inline uint32_t sessionDropAt = UINT32_MAX, channelBytes = 0;
@@ -63,6 +64,7 @@ inline void reset() {
     userBeforeConnect = false;
     hostKeyEd25519Requested = hostKeyOptionsBeforeConnect = false;
     channelOpenRc = channelAgain = channelOpens = 0;
+    forwardToApprovedLoopback = authBeforeForward = true;
     channelAlloc = true; secondSilent = wrongBody = shortBody = false;
     channelReadError = false; sessionConnected = true;
     sessionDropAt = UINT32_MAX; channelBytes = 0;

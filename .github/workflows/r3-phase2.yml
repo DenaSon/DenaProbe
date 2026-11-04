@@ -44,3 +44,5 @@ jobs:
         run: pio run -e esp32dev_a1_password_compile
       - name: Compile A2 auth-only pilot (no forwarding, no credentials)
         run: pio run -e esp32dev_a2_auth_only_compile
+      - name: Compile B1 controlled Core-loopback forwarding (CI only, no credentials)
+        run: pio run -e esp32dev_b1_forwarding_compile

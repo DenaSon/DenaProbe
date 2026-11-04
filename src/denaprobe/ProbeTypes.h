@@ -74,6 +74,20 @@ struct Result {
     int16_t wifiRssiDbm; // Phone hotspot Wi-Fi signal; NOT cellular LTE RSSI.
 };
 
+// B1 first physical pilot deliberately excludes Deep evidence from production
+// DPT/2 while preserving independent TCP/SSH/HTTPS telemetry. The Core's
+// existing detector can interpret loopback channel failure as D1 and full
+// loopback samples as HEALTHY, neither of which proves NPV internet egress.
+// A separately reviewed Core classification/target-isolation gate is required
+// before a later signed Deep field trial. Serial keeps full Deep diagnostics.
+inline Result telemetrySafeResult(const Result &result) {
+    Result safe = result;
+#if defined(PROBE_B1_FORWARDING_PILOT) && PROBE_B1_FORWARDING_PILOT
+    safe.deep = DeepEvidence{};
+#endif
+    return safe;
+}
+
 struct CurrentState {
     SshPathState ssh;
     PublicHttpsState https;
