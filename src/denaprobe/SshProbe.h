@@ -290,6 +290,22 @@ Result runSshTransport() {
         result.code = Code::PASS;
 #if PROBE_DEEP_ENABLED
         // Explicitly opt-in only: monitoring needs no SSH login or responder.
+#if defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY
+        // Edge monitoring ends at SSH password login: NO forwarding.
+        static uint32_t authCycles = 0;
+        ++authCycles;
+        if (authCycles % PROBE_DEEP_EVERY_N_CYCLES == 0) {
+            if (!authSettingsValid()) {
+                result.auth.measured = true;
+                result.auth.code = 90;
+                result.auth.completedAtMs = millis();
+                Serial.println("[edge-auth] outcome=LOCAL_UNMEASURABLE | "
+                               "reason=INVALID_LOCAL_CONFIG");
+            } else {
+                runEdgeAuthOnly(owner.session, result.auth);
+            }
+        }
+#else
         if (!deepSettingsValid()) {
             result.deep.measured = true;
             result.deep.code = 90;
@@ -303,6 +319,7 @@ Result runSshTransport() {
                 runAuthenticatedDeep(owner.session, result.deep);
         }
 #endif
+#endif
     } else if (rc == SSH_AGAIN) {
         result.code = Code::SERVICE_ACCEPT_TIMEOUT;
     } else {
@@ -311,7 +328,8 @@ Result runSshTransport() {
     // The pre-auth SSH step can have succeeded *before* hotspot Wi-Fi fell
     // during the deep witness; preserve that observation, but report w=0
     // and z.s=90 instead of inventing a remote network outage.
-    if (result.deep.measured && WiFi.status() != WL_CONNECTED)
+    if ((result.deep.measured || result.auth.measured) &&
+        WiFi.status() != WL_CONNECTED)
         result.wifiRssiDbm = 0;
     return result;
 }
