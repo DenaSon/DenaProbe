@@ -82,17 +82,26 @@ inline bool deepSettingsValid() {
         PROBE_LITE_DWELL_MS > 10000UL ||
         PROBE_LITE_EVERY_N_CYCLES < 1 ||
         PROBE_LITE_EVERY_N_CYCLES > 30) return false;
-    // A controlled public test responder, not a Core/Edge-local loopback.
-    // Any unconfigured / loopback / malformed host fails closed.
+    // Require a hostname with an alphabetic public DNS suffix; reject literal
+    // loopback/private IPs and the unused placeholder. Public routability
+    // still needs a separate operator-approved Core-side preflight.
     const char *target = PROBE_DEEP_REMOTE_HOST;
     const size_t n = strlen(target);
-    if (n < 4 || n > 128 || strcmp(target, "127.0.0.1") == 0 ||
-        strcmp(target, "CHANGE_ME_LITE_HOST") == 0) return false;
+    if (n < 4 || n > 128 ||
+        strcmp(target, "CHANGE_ME_LITE_HOST") == 0 ||
+        strcmp(target, "localhost") == 0) return false;
+    bool hasLetter = false, hasDot = false;
     for (size_t i = 0; i < n; ++i) {
         const char x = target[i];
-        if (!((x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') ||
-              (x >= '0' && x <= '9') || x == '-' || x == '.')) return false;
+        const bool letter = (x >= 'a' && x <= 'z') ||
+                            (x >= 'A' && x <= 'Z');
+        hasLetter |= letter;
+        hasDot |= x == '.';
+        if (!(letter || (x >= '0' && x <= '9') ||
+              x == '-' || x == '.')) return false;
     }
+    if (!hasLetter || !hasDot ||
+        strcmp(target + n - 6, ".local") == 0) return false;
 #else
     if (strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") != 0) return false;
 #endif
