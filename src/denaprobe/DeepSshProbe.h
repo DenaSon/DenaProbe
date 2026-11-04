@@ -4,6 +4,7 @@
 // Caller MUST verify the pinned SSH host key before calling this function.
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <libssh/libssh.h>
@@ -14,6 +15,14 @@
 #endif
 #ifndef PROBE_DEEP_USER
 #define PROBE_DEEP_USER ""
+#endif
+// 0 keeps the existing R3 key-auth experiment; 1 opts into password auth.
+// Passwords are provisioned only in ignored local configuration, never CI.
+#ifndef PROBE_DEEP_AUTH_MODE
+#define PROBE_DEEP_AUTH_MODE 0
+#endif
+#ifndef PROBE_DEEP_PASSWORD
+#define PROBE_DEEP_PASSWORD ""
 #endif
 #ifndef PROBE_DEEP_PRIVATE_KEY_B64
 #define PROBE_DEEP_PRIVATE_KEY_B64 ""
@@ -37,9 +46,17 @@
 namespace DenaProbe {
 #if PROBE_DEEP_ENABLED
 inline bool deepSettingsValid() {
-    return PROBE_DEEP_ENABLED && strlen(PROBE_DEEP_USER) >= 1 &&
-           strlen(PROBE_DEEP_USER) <= 48 &&
-           strlen(PROBE_DEEP_PRIVATE_KEY_B64) > 50 &&
+    const size_t userLen = strlen(PROBE_DEEP_USER);
+#if PROBE_DEEP_AUTH_MODE == 1
+    const size_t secretLen = strlen(PROBE_DEEP_PASSWORD);
+    const bool credentialsValid = secretLen >= 1 && secretLen <= 128;
+#elif PROBE_DEEP_AUTH_MODE == 0
+    const bool credentialsValid = strlen(PROBE_DEEP_PRIVATE_KEY_B64) > 50;
+#else
+    const bool credentialsValid = false; // Never silently select an auth fallback.
+#endif
+    return PROBE_DEEP_ENABLED && userLen >= 1 && userLen <= 48 &&
+           credentialsValid &&
            strcmp(PROBE_DEEP_REMOTE_HOST, "127.0.0.1") == 0 &&
            PROBE_DEEP_REMOTE_PORT >= 1 && PROBE_DEEP_REMOTE_PORT <= 65535 &&
            PROBE_DEEP_SAMPLE_BYTES >= 1 && PROBE_DEEP_SAMPLE_BYTES <= 65536UL &&
@@ -79,7 +96,7 @@ inline TransferEvidence deepTransfer(ssh_session session) {
     while (WiFi.status() == WL_CONNECTED &&
            millis() - bodyStart < 12000UL && out.received < out.requested) {
         const int want = static_cast<int>(
-            min(static_cast<uint32_t>(sizeof(chunk)), out.requested - out.received));
+            std::min(static_cast<uint32_t>(sizeof(chunk)), out.requested - out.received));
         rc = ssh_channel_read_timeout(channel, chunk, want, 0, 100);
         if (rc > 0) {
             for (int i = 0; i < rc; ++i)
@@ -104,39 +121,90 @@ inline TransferEvidence deepTransfer(ssh_session session) {
     return out;
 }
 
-inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
-    out.measured = true;
-    out.code = 90;
+// Wire-compatible auth results: 1 success; 10 rejected/partial;
+// 11 deadline; 12 protocol/library error; 90 local/unmeasurable.
+// None is an SSH filtering verdict or an excuse to retry bad credentials.
+struct DeepAuthAttempt {
+    uint16_t code = 90;
+    uint32_t elapsedMs = 0;
+};
+
+inline DeepAuthAttempt performDeepAuth(ssh_session session) {
+    DeepAuthAttempt out{};
     const uint32_t started = millis();
-    ssh_key key = nullptr;
-    // Private key is a dedicated, provisioned, ignored *local* secret; no
-    // user credentials or unprotected fallback are ever used.
-    if (ssh_pki_import_privkey_base64(PROBE_DEEP_PRIVATE_KEY_B64, nullptr,
-                                       nullptr, nullptr, &key) != SSH_OK || !key) {
-        out.completedAtMs = millis();
-        return;
-    }
     int rc = SSH_AUTH_AGAIN;
-    const uint32_t authStart = millis();
-    while (WiFi.status() == WL_CONNECTED && millis() - authStart < 8000UL) {
+#if PROBE_DEEP_AUTH_MODE == 1
+    // A verified pinned host key is a mandatory caller precondition.
+    // The session remains non-blocking; AGAIN never extends the wall deadline.
+    while (WiFi.status() == WL_CONNECTED && millis() - started < 8000UL) {
+        rc = ssh_userauth_password(session, PROBE_DEEP_USER, PROBE_DEEP_PASSWORD);
+        if (rc != SSH_AUTH_AGAIN) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+#elif PROBE_DEEP_AUTH_MODE == 0
+    ssh_key key = nullptr;
+    if (ssh_pki_import_privkey_base64(PROBE_DEEP_PRIVATE_KEY_B64, nullptr,
+                                      nullptr, nullptr, &key) != SSH_OK || !key) {
+        out.elapsedMs = millis() - started;
+        return out;
+    }
+    while (WiFi.status() == WL_CONNECTED && millis() - started < 8000UL) {
         rc = ssh_userauth_publickey(session, nullptr, key);
         if (rc != SSH_AUTH_AGAIN) break;
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     ssh_key_free(key);
-    out.authMs = millis() - authStart;
-    if (WiFi.status() != WL_CONNECTED) {
-        out.code = 90;
-    } else if (rc == SSH_AUTH_AGAIN) {
-        out.code = 11;
-    } else if (rc == SSH_AUTH_DENIED || rc == SSH_AUTH_PARTIAL) {
-        out.code = 10;
-    } else if (rc != SSH_AUTH_SUCCESS) {
-        out.code = 12;
+#endif
+    out.elapsedMs = millis() - started;
+    if (WiFi.status() != WL_CONNECTED) out.code = 90;
+    else if (rc == SSH_AUTH_AGAIN) out.code = 11;
+    else if (rc == SSH_AUTH_DENIED || rc == SSH_AUTH_PARTIAL) out.code = 10;
+    else if (rc == SSH_AUTH_SUCCESS) out.code = 1;
+    else out.code = 12;
+    return out;
+}
+
+inline const char *deepAuthOutcome(uint16_t code) {
+    switch (code) {
+        case 1: return "AUTH_SUCCESS";
+        case 10: return "AUTH_REJECTED";
+        case 11: return "AUTH_TIMEOUT";
+        case 12: return "AUTH_ERROR";
+        default: return "LOCAL_UNMEASURABLE";
+    }
+}
+
+inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
+    Serial.printf("[deep] %s | attempted=%u | channel_open=%u | "
+                  "bytes=%lu/%lu | ms=%lu | code=%u\n",
+                  stage, static_cast<unsigned>(e.attempted),
+                  static_cast<unsigned>(e.channelOpened),
+                  static_cast<unsigned long>(e.received),
+                  static_cast<unsigned long>(e.requested),
+                  static_cast<unsigned long>(e.elapsedMs),
+                  static_cast<unsigned>(e.code));
+}
+
+inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
+    out.measured = true;
+    out.code = 90;
+    const uint32_t started = millis();
+    const DeepAuthAttempt auth = performDeepAuth(session);
+    out.authCode = auth.code; // Local diagnostics only; DPT/2 wire unchanged.
+    out.authMs = auth.elapsedMs;
+    Serial.printf("[deep] AUTH | mode=%s | outcome=%s | ms=%lu | "
+                  "host_key=PIN_VERIFIED_BY_CALLER\n",
+                  PROBE_DEEP_AUTH_MODE == 1 ? "PASSWORD" : "PUBLIC_KEY",
+                  deepAuthOutcome(out.authCode),
+                  static_cast<unsigned long>(out.authMs));
+
+    if (out.authCode != 1) {
+        out.code = out.authCode;
     } else {
-        // This is the *same authenticated session* for both independent
-        // forwarding channel attempts, separated by the controlled dwell.
+        // The same authenticated session is used for both independent
+        // allowlisted forwarding channels with a controlled dwell in between.
         out.first = deepTransfer(session);
+        printDeepTransfer("TRANSFER_1", out.first);
         if (out.first.code == 1) {
             const uint32_t dwell = millis();
             while (WiFi.status() == WL_CONNECTED &&
@@ -144,8 +212,14 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
                    ssh_is_connected(session)) {
                 vTaskDelay(pdMS_TO_TICKS(50));
             }
+            Serial.printf("[deep] DWELL | ms=%lu | session_connected=%u\n",
+                          static_cast<unsigned long>(millis() - dwell),
+                          static_cast<unsigned>(ssh_is_connected(session)));
             if (WiFi.status() == WL_CONNECTED && ssh_is_connected(session)) {
                 out.second = deepTransfer(session);
+                printDeepTransfer("TRANSFER_2", out.second);
+            } else {
+                Serial.println("[deep] TRANSFER_2 | outcome=NOT_TESTED");
             }
             if (!ssh_is_connected(session)) {
                 out.code = 20;  // session closed/reset unexpectedly
@@ -154,11 +228,11 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
             } else if (!out.second.channelOpened) {
                 out.code = out.second.code == 20 ? 31 : 30;
             } else if (out.second.code == 1) {
-                out.code = 1;   // both full, deterministic bodies verified
+                out.code = 1;
             } else if (out.second.code == 20) {
-                out.code = 40;  // data timeout after channel open
+                out.code = 40;
             } else {
-                out.code = 41;  // incomplete after channel open
+                out.code = 41;
             }
         } else if (!ssh_is_connected(session)) {
             out.code = 20;
@@ -170,11 +244,20 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
             out.code = 41;
         }
     }
-    // A local hotspot loss during the authenticated dwell or transfer is
-    // *never* evidence of SSH reset, channel failure or remote throttling.
+    // Local hotspot loss takes precedence over all remote stage hypotheses.
     if (WiFi.status() != WL_CONNECTED) out.code = 90;
     out.sessionMs = millis() - started;
     out.completedAtMs = millis();
+    Serial.printf("[deep] SUMMARY | auth=%s | deep_code=%u | session_ms=%lu | "
+                  "free_heap=%lu | min_heap=%lu | largest_block=%lu | "
+                  "stack_watermark_raw=%lu | filtering_verdict=INCONCLUSIVE\n",
+                  deepAuthOutcome(out.authCode), static_cast<unsigned>(out.code),
+                  static_cast<unsigned long>(out.sessionMs),
+                  static_cast<unsigned long>(ESP.getFreeHeap()),
+                  static_cast<unsigned long>(ESP.getMinFreeHeap()),
+                  static_cast<unsigned long>(
+                      heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+                  static_cast<unsigned long>(uxTaskGetStackHighWaterMark(nullptr)));
 }
 #else
 inline bool deepSettingsValid() { return false; }

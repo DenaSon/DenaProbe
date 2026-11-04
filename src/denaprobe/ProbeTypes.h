@@ -51,6 +51,7 @@ struct DeepEvidence {
     bool measured = false;
     uint16_t code = 90;        // deep-session status
     uint32_t completedAtMs = 0;
+    uint16_t authCode = 90;   // Local-only stage result; not a DPT/2 wire field.
     uint32_t authMs = 0;
     uint32_t sessionMs = 0;
     TransferEvidence first{};

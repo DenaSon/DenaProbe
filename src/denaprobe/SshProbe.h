@@ -16,7 +16,8 @@
 #include "DeepSshProbe.h"
 #endif
 
-// No authentication, SSH channel or NPV data-path operation in R1.
+// R1 stays pre-auth-only; the explicitly enabled Deep build may authenticate.
+// Host-key pinning always precedes the optional Deep password exchange.
 // libssh progress callbacks are observational and MUST NOT consume packets.
 namespace DenaProbe {
 void recordStage(int32_t &destination, const StageTrace &trace) {
@@ -279,12 +280,13 @@ Result runSshTransport() {
     } else if (rc == SSH_OK) {
         result.code = Code::PASS;
 #if PROBE_DEEP_ENABLED
-        // Future optional experiment: normal DPT/2 monitoring does not
-        // require an SSH identity, private key, or relay-local responder.
+        // Explicitly opt-in only: monitoring needs no SSH login or responder.
         if (!deepSettingsValid()) {
             result.deep.measured = true;
             result.deep.code = 90;
             result.deep.completedAtMs = millis();
+            Serial.println("[deep] AUTH | outcome=LOCAL_UNMEASURABLE | "
+                           "reason=INVALID_LOCAL_CONFIG");
         } else {
             static uint32_t acceptedCycles = 0;
             ++acceptedCycles;
