@@ -290,8 +290,28 @@ Result runSshTransport() {
         result.code = Code::PASS;
 #if PROBE_DEEP_ENABLED
         // Explicitly opt-in only: monitoring needs no SSH login or responder.
-#if defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY
-        // Edge monitoring ends at SSH password login: NO forwarding.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+        // One password login, then two bounded data transfers in that same
+        // verified SSH session. No additional login or arbitrary proxy.
+        static uint32_t liteCycles = 0;
+        ++liteCycles;
+        if (liteCycles % PROBE_LITE_EVERY_N_CYCLES == 0) {
+            if (!deepSettingsValid()) {
+                result.auth.measured = true;
+                result.auth.code = 90;
+                result.auth.completedAtMs = millis();
+                result.deep.measured = true;
+                result.deep.code = 90;
+                result.deep.routeKind = 2;
+                result.deep.completedAtMs = millis();
+                Serial.println("[lite] CONFIG_INVALID | transfer=NOT_TESTED | "
+                               "no_network_failure_verdict");
+            } else {
+                runAuthenticatedDeep(owner.session, result.deep, &result.auth);
+            }
+        }
+#elif defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY
+        // Historical B3 auth-only proof (superseded by the Lite profile).
         static uint32_t authCycles = 0;
         ++authCycles;
         if (authCycles % PROBE_DEEP_EVERY_N_CYCLES == 0) {
