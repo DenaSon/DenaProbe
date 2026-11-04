@@ -194,6 +194,9 @@ inline void printDeepTransfer(const char *stage, const TransferEvidence &e) {
 inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out) {
     out.measured = true;
     out.code = 90;
+    // deepSettingsValid() restricts this witness to 127.0.0.1:18180.
+    // Label even auth/channel failures as attempted Core-loopback evidence.
+    out.routeKind = PROBE_DEEP_AUTH_ONLY ? 0 : 1;
     const uint32_t started = millis();
     const DeepAuthAttempt auth = performDeepAuth(session);
     out.authCode = auth.code; // Local diagnostics only; DPT/2 wire unchanged.

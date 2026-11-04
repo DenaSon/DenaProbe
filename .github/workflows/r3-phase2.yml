@@ -46,3 +46,5 @@ jobs:
         run: pio run -e esp32dev_a2_auth_only_compile
       - name: Compile B1 controlled Core-loopback forwarding (CI only, no credentials)
         run: pio run -e esp32dev_b1_forwarding_compile
+      - name: Compile B2 tagged Core-loopback telemetry (CI only, no credentials)
+        run: pio run -e esp32dev_b2_loopback_telemetry_compile
