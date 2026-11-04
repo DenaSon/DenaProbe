@@ -221,6 +221,7 @@ public:
                   static_cast<unsigned>(r.deep.code),
                   static_cast<unsigned long>(r.deep.authMs),
                   static_cast<unsigned long>(r.deep.sessionMs));
+            if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback, never NPV.
             const TransferEvidence *samples[2] = {&r.deep.first, &r.deep.second};
             for (uint8_t i = 0; i < 2; ++i) {
                 const TransferEvidence &transfer = *samples[i];

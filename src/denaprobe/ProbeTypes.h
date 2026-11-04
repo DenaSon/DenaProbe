@@ -52,6 +52,9 @@ struct DeepEvidence {
     uint16_t code = 90;        // deep-session status
     uint32_t completedAtMs = 0;
     uint16_t authCode = 90;   // Local-only stage result; not a DPT/2 wire field.
+    // Signed wire z.rt=1 means Core-loopback test responder, NOT NPV egress.
+    // 0 = no route claim / legacy, omitted from wire.
+    uint8_t routeKind = 0;
     uint32_t authMs = 0;
     uint32_t sessionMs = 0;
     TransferEvidence first{};

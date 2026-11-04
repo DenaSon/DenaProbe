@@ -37,3 +37,7 @@
 // explicitly change PROBE_DEEP_AUTH_ONLY from 1 to 0 only for the B1 build.
 // Keep PROBE_DEEP_REMOTE_HOST="127.0.0.1", PORT=18180, SAMPLE_BYTES=16384,
 // DWELL_MS=20000. No general outbound proxy, no arbitrary SSH forwarding.
+
+// B2 after Core rollout: same explicit B1 forwarding settings, but build the
+// B2-only environment to emit signed z.rt=1 (CORE_LOOPBACK) + z.f/z.g.
+// Never treat Core-loopback success as NPV customer internet egress.
