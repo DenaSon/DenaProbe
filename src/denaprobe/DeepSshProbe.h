@@ -47,6 +47,15 @@
 #ifndef PROBE_DEEP_EVERY_N_CYCLES
 #define PROBE_DEEP_EVERY_N_CYCLES 2
 #endif
+#ifndef PROBE_LITE_SAMPLE_BYTES
+#define PROBE_LITE_SAMPLE_BYTES 8192UL
+#endif
+#ifndef PROBE_LITE_DWELL_MS
+#define PROBE_LITE_DWELL_MS 5000UL
+#endif
+#ifndef PROBE_LITE_EVERY_N_CYCLES
+#define PROBE_LITE_EVERY_N_CYCLES 1
+#endif
 
 namespace DenaProbe {
 #if PROBE_DEEP_ENABLED
@@ -68,6 +77,11 @@ inline bool authSettingsValid() {
 inline bool deepSettingsValid() {
     if (!authSettingsValid()) return false;
 #if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    if (PROBE_LITE_SAMPLE_BYTES < 1024UL ||
+        PROBE_LITE_SAMPLE_BYTES > 16384UL ||
+        PROBE_LITE_DWELL_MS > 10000UL ||
+        PROBE_LITE_EVERY_N_CYCLES < 1 ||
+        PROBE_LITE_EVERY_N_CYCLES > 30) return false;
     // A controlled public test responder, not a Core/Edge-local loopback.
     // Any unconfigured / loopback / malformed host fails closed.
     const char *target = PROBE_DEEP_REMOTE_HOST;
@@ -93,7 +107,11 @@ inline bool deepSettingsValid() {
 inline TransferEvidence deepTransfer(ssh_session session) {
     TransferEvidence out{};
     out.attempted = true;
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+    out.requested = PROBE_LITE_SAMPLE_BYTES;
+#else
     out.requested = PROBE_DEEP_SAMPLE_BYTES;
+#endif
     out.code = 23; // channel error until opened
     const uint32_t start = millis();
     ssh_channel channel = ssh_channel_new(session);
@@ -268,7 +286,12 @@ inline void runAuthenticatedDeep(ssh_session session, DeepEvidence &out,
         if (out.first.code == 1) {
             const uint32_t dwell = millis();
             while (WiFi.status() == WL_CONNECTED &&
-                   millis() - dwell < PROBE_DEEP_DWELL_MS &&
+                   millis() - dwell <
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+                       PROBE_LITE_DWELL_MS &&
+#else
+                       PROBE_DEEP_DWELL_MS &&
+#endif
                    ssh_is_connected(session)) {
                 vTaskDelay(pdMS_TO_TICKS(50));
             }
