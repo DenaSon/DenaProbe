@@ -110,6 +110,29 @@ int main() {
     assert(r.deep.first.code == 1 && r.deep.second.code == 20);
 
     Fake::reset();
+    Fake::httpPartialWrite = true;
+    r = runSshTransport();
+    assert(r.auth.code == 1 && r.deep.code == 1);
+    assert(r.deep.first.received == 8192 && r.deep.second.received == 8192);
+
+    Fake::reset();
+    Fake::httpWriteError = true;
+    r = runSshTransport();
+    assert(r.auth.code == 1 && r.deep.code == 41);
+    assert(r.deep.first.code == 23 && r.deep.first.channelOpened);
+
+    Fake::reset();
+    Fake::shortBody = true;
+    r = runSshTransport();
+    assert(r.auth.code == 1 && r.deep.code == 41);
+    assert(r.deep.first.code == 22 && r.deep.first.received == 512);
+
+    Fake::reset();
+    Fake::httpCode = 206;
+    r = runSshTransport();
+    assert(r.deep.code == 1 && r.deep.second.received == 8192);
+
+    Fake::reset();
     Fake::httpCode = 302;
     r = runSshTransport();
     assert(r.auth.code == 1 && r.deep.code == 41);
