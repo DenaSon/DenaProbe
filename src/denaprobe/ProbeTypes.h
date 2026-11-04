@@ -96,6 +96,12 @@ inline Result telemetrySafeResult(const Result &result) {
 #if defined(PROBE_B1_FORWARDING_PILOT) && PROBE_B1_FORWARDING_PILOT
     safe.deep = DeepEvidence{};
 #endif
+// Existing Core rejects route=2. Retain signed preauth/TCP until Core Phase 2.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE
+#if !defined(PROBE_B3_LITE_WIRE) || !PROBE_B3_LITE_WIRE
+    safe.deep = DeepEvidence{};
+#endif
+#endif
     return safe;
 }
 
