@@ -222,7 +222,11 @@ public:
                   static_cast<unsigned>(r.deep.code),
                   static_cast<unsigned long>(r.deep.authMs),
                   static_cast<unsigned long>(r.deep.sessionMs));
-            if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback, never NPV.
+            if (r.deep.routeKind == 1) w.add(",\"rt\":1"); // Core-loopback.
+#if defined(PROBE_B3_LITE) && PROBE_B3_LITE && \
+    defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
+            if (r.deep.routeKind == 2) w.add(",\"rt\":2"); // Controlled public witness.
+#endif
             const TransferEvidence *samples[2] = {&r.deep.first, &r.deep.second};
             for (uint8_t i = 0; i < 2; ++i) {
                 const TransferEvidence &transfer = *samples[i];
@@ -236,7 +240,8 @@ public:
             }
             w.add("}");
         }
-#if defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY && \
+#if ((defined(PROBE_B3_EDGE_AUTH_ONLY) && PROBE_B3_EDGE_AUTH_ONLY) || \
+     (defined(PROBE_B3_LITE) && PROBE_B3_LITE)) && \
     defined(PROBE_B3_AUTH_WIRE) && PROBE_B3_AUTH_WIRE
         // Reserved signed DPT/2 extension; enable only after Core rollout.
         if (version_ == 2 && r.auth.measured && authUptime != 0) {
