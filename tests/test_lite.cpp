@@ -7,8 +7,8 @@
 #define PROBE_A2_PIN_ED25519 1
 #define PROBE_DEEP_USER "deep-unit-user"
 #define PROBE_DEEP_PASSWORD "synthetic-unit-only"
-#define PROBE_DEEP_REMOTE_HOST "witness.example"
-#define PROBE_DEEP_REMOTE_PORT 18180
+#define PROBE_DEEP_REMOTE_HOST "speedtest.tele2.net"
+#define PROBE_DEEP_REMOTE_PORT 80
 #define PROBE_LITE_SAMPLE_BYTES 8192UL
 #define PROBE_LITE_DWELL_MS 5000UL
 #define PROBE_LITE_EVERY_N_CYCLES 1
@@ -45,12 +45,14 @@ int main() {
     assert(good.code == Code::PASS && good.tcp.code == 1);
     assert(std::strcmp(good.resolvedEdgeIp, "192.0.2.1") == 0);
     assert(good.auth.measured && good.auth.code == 1);
-    assert(good.deep.measured && good.deep.code == 1 && good.deep.routeKind == 2);
+    assert(good.deep.measured && good.deep.code == 1 && good.deep.routeKind == 3);
     assert(good.deep.first.requested == 8192 && good.deep.first.received == 8192);
     assert(good.deep.second.requested == 8192 && good.deep.second.received == 8192);
     assert(good.deep.sessionMs >= 5000);
     assert(Fake::authCalls == 1 && Fake::channelOpens == 2);
     assert(Fake::forwardToLiteTarget && !Fake::forwardToApprovedLoopback);
+    assert(Fake::forwardedHttpRequest.find("GET /1MB.zip HTTP/1.1") == 0);
+    assert(Fake::forwardedHttpRequest.find("Range: bytes=0-8191") != std::string::npos);
     assert(Fake::authBeforeForward && Fake::hostKeyEd25519Requested);
     assert(logged("[deep] AUTH | mode=PASSWORD | outcome=AUTH_SUCCESS"));
     assert(logged("TRANSFER_2 | attempted=1 | channel_open=1"));
@@ -58,7 +60,7 @@ int main() {
     assert(has(wire, "\"c\":{"));
 #if defined(PROBE_B3_LITE_WIRE) && PROBE_B3_LITE_WIRE
     assert(has(wire, "\"z\":{\"u\":995,\"s\":1"));
-    assert(has(wire, "\"rt\":2"));
+    assert(has(wire, "\"rt\":3"));
     assert(has(wire, "\"ei\":\"192.0.2.1\""));
     assert(has(wire, "\"f\":{\"s\":1,\"r\":8192,\"n\":8192"));
     assert(has(wire, "\"g\":{\"s\":1,\"r\":8192,\"n\":8192"));
@@ -108,9 +110,10 @@ int main() {
     assert(r.deep.first.code == 1 && r.deep.second.code == 20);
 
     Fake::reset();
-    Fake::wrongBody = true;
+    Fake::httpCode = 302;
     r = runSshTransport();
     assert(r.auth.code == 1 && r.deep.code == 41);
+    assert(r.deep.first.code == 24);
 
     Fake::reset();
     Fake::dropAt = 100;
@@ -118,6 +121,6 @@ int main() {
     assert(r.deep.code == 90 && r.auth.code == 1); // Wi-Fi drops after login.
     assert(r.wifiRssiDbm == 0);
 
-    std::cout << "PASS Lite MCI Edge login, controlled 8KiB x2 transfer, "
+    std::cout << "PASS Lite MCI Edge login, HTTP Range 8KiB x2 transfer, "
               << "auth failures, no secret, wire=" << PROBE_B3_LITE_WIRE << "\n";
 }
