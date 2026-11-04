@@ -297,14 +297,20 @@ Result runSshTransport() {
         ++liteCycles;
         if (liteCycles % PROBE_LITE_EVERY_N_CYCLES == 0) {
             if (!deepSettingsValid()) {
-                result.auth.measured = true;
-                result.auth.code = 90;
-                result.auth.completedAtMs = millis();
+                // Still measure password login when the optional public
+                // responder has not yet been provisioned. Do not forward.
+                if (authSettingsValid()) {
+                    runEdgeAuthOnly(owner.session, result.auth);
+                } else {
+                    result.auth.measured = true;
+                    result.auth.code = 90;
+                    result.auth.completedAtMs = millis();
+                }
                 result.deep.measured = true;
                 result.deep.code = 90;
                 result.deep.routeKind = 2;
                 result.deep.completedAtMs = millis();
-                Serial.println("[lite] CONFIG_INVALID | transfer=NOT_TESTED | "
+                Serial.println("[lite] DATA_TARGET_NOT_READY | transfer=NOT_TESTED | "
                                "no_network_failure_verdict");
             } else {
                 runAuthenticatedDeep(owner.session, result.deep, &result.auth);
